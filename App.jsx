@@ -1,0 +1,784 @@
+import React, { useMemo, useState } from "react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
+import { Search, CalendarDays, Users, TrendingUp, FileClock, Upload, X, Inbox, Hourglass, BadgeCheck, CalendarClock, ChevronLeft, ChevronRight } from "lucide-react";
+
+/* ---------------------------------------------------------------
+   RAW DATA — seeded from the "Events" sheet.
+   Swap this array (or use the Upload CSV button) to refresh.
+----------------------------------------------------------------- */
+const RAW_EVENTS = [
+  { date: "02/05/2026", event: "JP", client: "Jonathan Pease", guests: "7", venue: "Blind Tiger and Feu", service: "Dinner", status: "Completed", type: "Corporate", value: null },
+  { date: "20/05/2026", event: "Metricon", client: "Mardi", guests: "73", venue: "Bistro", service: "Dinner", status: "Completed", type: "Corporate", value: 20000 },
+  { date: "23/05/2026", event: "Kovi", client: "Kovi Gordon", guests: "*", venue: "Multi Venu", service: "Multi-Day", status: "Completed", type: "Other", value: 40000 },
+  { date: "23/05/2026", event: "Brooke Carter", client: "Brooke Carter", guests: "21", venue: "Bistro", service: "Lunch", status: "Completed", type: "Other", value: null },
+  { date: "06/06/2026", event: "Lisa Harrisson", client: "Lisa Harrison", guests: "35", venue: "Bistro", service: "", status: "Completed", type: "", value: 17000 },
+  { date: "06/06/2026", event: "40th", client: "Natalie Eastgate", guests: "30", venue: "Bistro", service: "", status: "Completed", type: "Other", value: null },
+  { date: "10/07/2026", event: "Wake", client: "Sarah Trainor", guests: "240", venue: "Bistro", service: "", status: "Completed", type: "", value: 50000 },
+  { date: "11/07/2026", event: "Matt Stone Wine Dinner", client: "Matt Stone", guests: "", venue: "Bistro", service: "", status: "Completed", type: "", value: null },
+  { date: "11/08/2026", event: "Live Nation", client: "Live Nation", guests: "23", venue: "?", service: "", status: "Confirmed", type: "", value: null },
+  { date: "31/07/2026", event: "Smart Energy", client: "Rhiannon", guests: "80-90", venue: "Bistro", service: "", status: "Confirmed", type: "Corporate", value: 25000 },
+  { date: "07/08/2026", event: "Father's 70th Birthday", client: "Michelle Von Pien", guests: "17", venue: "Bistro", service: "", status: "Confirmed", type: "", value: null },
+  { date: "09/08/26", event: "", client: "Renae Wood", guests: "28", venue: "", service: "", status: "", type: "", value: null },
+  { date: "20/08/2026", event: "Truffle Dinner", client: "Belongil", guests: "", venue: "Bistro", service: "", status: "Confirmed", type: "", value: null },
+  { date: "21/08/2026", event: "Archie Rose Whisky Launch", client: "Archie Rose", guests: "", venue: "", service: "", status: "Confirmed", type: "", value: 17000 },
+  { date: "22/08/2026", event: "Hen's", client: "Emma", guests: "24", venue: "Bistro", service: "", status: "Enquiry", type: "", value: null },
+  { date: "23/08/2026", event: "Pottery by Sam Gordon in Kiosk", client: "Belongil", guests: "", venue: "", service: "", status: "Confirmed", type: "", value: null },
+  { date: "03/09/2026", event: "1800 Tequila", client: "1800", guests: "40", venue: "", service: "", status: "Confirmed", type: "", value: 17000 },
+  { date: "2026-09-05", event: "Engagement party", client: "Brittany Jones", guests: "50", venue: "Blind Tiger", service: "", status: "Cancelled", type: "Wedding", value: 20000 },
+  { date: "06/09/2026", event: "Father's Day", client: "Belongil", guests: "", venue: "", service: "", status: "Confirmed", type: "", value: null },
+  { date: "28/09/2026", event: "Accountants Lunch", client: "Luana Ress", guests: "", venue: "", service: "", status: "Enquiry", type: "", value: null },
+  { date: "03/10/2026", event: "Pre wedding Reception", client: "Margeau Dillon", guests: "", venue: "", service: "", status: "Cancelled", type: "", value: null },
+  { date: "14/10/2026", event: "Moorooduc Dinner", client: "Belongil", guests: "", venue: "", service: "", status: "Confirmed", type: "", value: null },
+  { date: "15/10/2026", event: "Moorooduc Dinne", client: "Belongil", guests: "", venue: "", service: "", status: "Confirmed", type: "", value: null },
+  { date: "16/10/2026", event: "Ampliphon", client: "Genevive", guests: "35", venue: "", service: "", status: "Enquiry", type: "", value: null },
+  { date: "22/10/2026", event: "W Home", client: "W Home", guests: "", venue: "South Yarra", service: "", status: "Enquiry", type: "", value: null },
+  { date: "27/10/2026", event: "CVS Lane", client: "Josh Leibermann", guests: "75", venue: "Bistro", service: "", status: "Confirmed", type: "", value: 35000 },
+  { date: "28/10/26", event: "REA GROUP", client: "Emma", guests: "26", venue: "", service: "", status: "Enquiry", type: "", value: 35000 },
+  { date: "30/10/2026", event: "Wedding", client: "Rochelle Turner", guests: "", venue: "Bistro", service: "", status: "Enquiry", type: "", value: null },
+  { date: "03/11/2026", event: "Melbourne Cup", client: "Belongil", guests: "", venue: "", service: "", status: "Confirmed", type: "", value: null },
+  { date: "04/11/2026", event: "Pavie Wine Dinner", client: "Belongil", guests: "", venue: "", service: "", status: "Confirmed", type: "", value: null },
+  { date: "16/11/2026", event: "Soho House", client: "", guests: "", venue: "", service: "", status: "", type: "", value: null },
+  { date: "20/11/26", event: "Bob McTavish", client: "Belongil", guests: "", venue: "", service: "", status: "Enquiry", type: "", value: null },
+  { date: "16/12/26", event: "Pressure Cooker Premier", client: "Belongil", guests: "", venue: "", service: "", status: "Enquiry", type: "", value: null },
+  { date: "18/12/2026", event: "Chrissy Caplice Concierge", client: "", guests: "", venue: "Feu", service: "Dinner", status: "Enquiry", type: "", value: null },
+  { date: "2027-01-15", event: "Birthday", client: "Lucy Harris", guests: "45", venue: "Feu", service: "", status: "Enquiry", type: "", value: null },
+  { date: "19/01/2027", event: "Amex", client: "Isabelle Cherry (Lateral Events)", guests: "45", venue: "Feu", service: "", status: "Confirmed", type: "", value: 30000 },
+  { date: "30/01/2027", event: "Birthday", client: "Kate Riley", guests: "40", venue: "Bistro", service: "", status: "Enquiry", type: "", value: null },
+  { date: "30/01/27", event: "Birthday", client: "Kimberley Frankham", guests: "", venue: "", service: "", status: "Enquiry", type: "", value: null },
+  { date: "06/03/2027", event: "Ashlee Booth", client: "Elopement", guests: "50", venue: "", service: "", status: "Enquiry", type: "", value: null },
+  { date: "07/06/2027", event: "Birthday", client: "Ash Vogel", guests: "50", venue: "", service: "", status: "Enquiry", type: "", value: null },
+  { date: "23/09/2027", event: "Wedding", client: "Imogen", guests: "80", venue: "Bistro", service: "", status: "Enquiry", type: "Wedding", value: null },
+  { date: "03/10/2027", event: "40th Birthday", client: "Nick Lawless", guests: "40-50", venue: "Feu", service: "", status: "", type: "", value: null },
+  { date: "31/10/2027", event: "Elopement Party", client: "Erin Jasch", guests: "30", venue: "", service: "", status: "", type: "", value: null },
+  { date: "", event: "Birthday", client: "kim Frankham", guests: "30", venue: "Bistro", service: "", status: "Enquiry", type: "", value: null },
+  { date: "", event: "Private Dinner", client: "Kayley", guests: "", venue: "Bistro", service: "", status: "Enquiry", type: "", value: null },
+  { date: "", event: "BBSF Kiosk Pop up", client: "Belongil", guests: "", venue: "", service: "", status: "Enquiry", type: "", value: null },
+];
+
+/* ---------------------------------------------------------------
+   HELPERS
+----------------------------------------------------------------- */
+function parseDate(str) {
+  if (!str) return null;
+  if (str.includes("-")) {
+    const [y, m, d] = str.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  const [d, m, yRaw] = str.split("/");
+  const y = yRaw.length === 2 ? 2000 + Number(yRaw) : Number(yRaw);
+  return new Date(y, Number(m) - 1, Number(d));
+}
+
+function parseGuests(str) {
+  if (!str || str === "*") return null;
+  if (str.includes("-")) {
+    const [a, b] = str.split("-").map(Number);
+    return Math.round((a + b) / 2);
+  }
+  const n = Number(str);
+  return Number.isFinite(n) ? n : null;
+}
+
+function fmtCurrency(n) {
+  if (n === null || n === undefined) return "—";
+  return "$" + n.toLocaleString("en-AU");
+}
+
+function fmtDate(d) {
+  if (!d) return "Undated";
+  return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+    if (inQuotes) {
+      if (char === '"' && next === '"') {
+        field += '"';
+        i++;
+      } else if (char === '"') {
+        inQuotes = false;
+      } else {
+        field += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ",") {
+      row.push(field);
+      field = "";
+    } else if (char === "\r") {
+      // skip — handled by \n
+    } else if (char === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += char;
+    }
+  }
+  if (field.length || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  // Drop fully-empty trailing/blank rows
+  return rows.filter((r) => r.some((c) => c.trim().length));
+}
+
+function parseCsvText(text) {
+  const rows = parseCsvRows(text);
+  if (!rows.length) throw new Error("empty");
+  const headers = rows[0].map((h) => h.trim().toLowerCase());
+  const idx = (name) => headers.findIndex((h) => h.includes(name));
+  const dIdx = headers.findIndex((h) => h.includes("date") && !h.includes("received")),
+    rIdx = idx("received"),
+    evIdx = idx("event"), clIdx = idx("client"),
+    gIdx = idx("guest"), vIdx = idx("venue") >= 0 ? idx("venue") : idx("location"),
+    sIdx = idx("service"), stIdx = idx("status"), tIdx = idx("type"), valIdx = idx("value");
+  return rows.slice(1).map((cols, i) => {
+    cols = cols.map((c) => c.trim());
+    const rawVal = valIdx >= 0 ? (cols[valIdx] || "").replace(/[^0-9.]/g, "") : "";
+    return {
+      id: i,
+      dateObj: parseDate(cols[dIdx] || ""),
+      dateRaw: cols[dIdx] || "",
+      receivedObj: rIdx >= 0 ? parseDate(cols[rIdx] || "") : null,
+      receivedRaw: rIdx >= 0 ? cols[rIdx] || "" : "",
+      event: cols[evIdx] || "Untitled",
+      client: cols[clIdx] || "—",
+      guestsRaw: cols[gIdx] || "",
+      guestsNum: parseGuests(cols[gIdx] || ""),
+      venue: cols[vIdx] || "TBC",
+      service: cols[sIdx] || "",
+      status: cols[stIdx] || "Unspecified",
+      type: cols[tIdx] || "Uncategorised",
+      value: rawVal ? Number(rawVal) : null,
+    };
+  });
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const STATUS_COLORS = {
+  Confirmed: "#4f7a72",
+  Completed: "#7a9c8e",
+  Enquiry: "#a3583c",
+  Cancelled: "#7a4a44",
+  Pending: "#8f8577",
+  Unspecified: "#4a453e",
+};
+
+const TODAY = new Date(2026, 6, 16); // 16 Jul 2026
+
+function weekRange(date) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0 = Sun
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const start = new Date(d);
+  start.setDate(d.getDate() + diffToMonday);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+/* ---------------------------------------------------------------
+   COMPONENT
+----------------------------------------------------------------- */
+export default function EventsSalesDashboard() {
+  const [events, setEvents] = useState(() =>
+    RAW_EVENTS.map((e, i) => ({
+      id: i,
+      dateObj: parseDate(e.date),
+      receivedObj: null,
+      receivedRaw: "",
+      dateRaw: e.date,
+      event: e.event || "Untitled",
+      client: e.client || "—",
+      guestsRaw: e.guests,
+      guestsNum: parseGuests(e.guests),
+      venue: e.venue || "TBC",
+      service: e.service || "",
+      status: e.status || "Unspecified",
+      type: e.type || "Uncategorised",
+      value: e.value,
+    }))
+  );
+
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [search, setSearch] = useState("");
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+
+  const filtered = useMemo(() => {
+    return events
+      .filter((e) => statusFilter === "All" || e.status === statusFilter)
+      .filter((e) => {
+        if (!search.trim()) return true;
+        const q = search.toLowerCase();
+        return (
+          e.event.toLowerCase().includes(q) ||
+          e.client.toLowerCase().includes(q) ||
+          e.venue.toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => {
+        if (!a.dateObj) return 1;
+        if (!b.dateObj) return -1;
+        return a.dateObj - b.dateObj;
+      });
+  }, [events, statusFilter, search]);
+
+  const kpis = useMemo(() => {
+    const confirmed = events.filter((e) => e.status === "Confirmed");
+    const completed = events.filter((e) => e.status === "Completed");
+    const enquiries = events.filter((e) => e.status === "Enquiry");
+    const completedRevenue = completed.reduce((s, e) => s + (e.value || 0), 0);
+    const upcomingConfirmedRevenue = confirmed.reduce((s, e) => s + (e.value || 0), 0);
+    const confirmedRevenue = completedRevenue + upcomingConfirmedRevenue;
+    const pipelineValue = enquiries.reduce((s, e) => s + (e.value || 0), 0);
+    const totalGuests = [...confirmed, ...completed].reduce((s, e) => s + (e.guestsNum || 0), 0);
+    const upcoming = events.filter((e) => e.dateObj && e.dateObj >= TODAY && e.status !== "Cancelled").length;
+    const { start, end } = weekRange(TODAY);
+    const hasReceivedData = events.some((e) => e.receivedObj);
+    const enquiriesThisWeek = events.filter(
+      (e) => e.status === "Enquiry" && e.receivedObj && e.receivedObj >= start && e.receivedObj <= end
+    ).length;
+    const withLead = events.filter((e) => e.receivedObj && e.dateObj);
+    const avgLeadDays = withLead.length
+      ? Math.round(
+          withLead.reduce((s, e) => s + (e.dateObj - e.receivedObj) / (1000 * 60 * 60 * 24), 0) / withLead.length
+        )
+      : null;
+    return {
+      confirmedRevenue,
+      completedRevenue,
+      upcomingConfirmedRevenue,
+      pipelineValue,
+      confirmedCount: confirmed.length,
+      completedCount: completed.length,
+      enquiryCount: enquiries.length,
+      totalGuests,
+      upcoming,
+      enquiriesThisWeek,
+      hasReceivedData,
+      avgLeadDays,
+      weekStart: start,
+      weekEnd: end,
+    };
+  }, [events]);
+
+  const revenueByMonth = useMemo(() => {
+    const map = {};
+    events.forEach((e) => {
+      if (!e.dateObj) return;
+      const key = `${MONTHS[e.dateObj.getMonth()]} ${String(e.dateObj.getFullYear()).slice(2)}`;
+      if (!map[key]) map[key] = { key, sortKey: e.dateObj.getFullYear() * 12 + e.dateObj.getMonth(), Confirmed: 0, Enquiry: 0 };
+      if (e.status === "Confirmed") map[key].Confirmed += e.value || 0;
+      if (e.status === "Enquiry") map[key].Enquiry += e.value || 0;
+    });
+    return Object.values(map).sort((a, b) => a.sortKey - b.sortKey);
+  }, [events]);
+
+  const statusBreakdown = useMemo(() => {
+    const map = {};
+    events.forEach((e) => {
+      map[e.status] = (map[e.status] || 0) + 1;
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [events]);
+
+  const enquiriesByType = useMemo(() => {
+    const map = {};
+    events
+      .filter((e) => e.status === "Enquiry")
+      .forEach((e) => {
+        map[e.type] = (map[e.type] || 0) + 1;
+      });
+    return Object.entries(map)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [events]);
+
+  const venueBreakdown = useMemo(() => {
+    const map = {};
+    events.forEach((e) => {
+      const v = e.venue === "TBC" ? "TBC" : e.venue;
+      map[v] = (map[v] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }, [events]);
+
+  const upcomingList = useMemo(
+    () =>
+      events
+        .filter((e) => e.dateObj && e.dateObj >= TODAY)
+        .sort((a, b) => a.dateObj - b.dateObj)
+        .slice(0, 6),
+    [events]
+  );
+
+  const [calendarMonth, setCalendarMonth] = useState(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1));
+  const [selectedDay, setSelectedDay] = useState(null);
+
+  const calendarGrid = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstOfMonth = new Date(year, month, 1);
+    const startOffset = (firstOfMonth.getDay() + 6) % 7; // Monday = 0
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const eventsByDay = {};
+    events.forEach((e) => {
+      if (!e.dateObj) return;
+      if (e.dateObj.getFullYear() === year && e.dateObj.getMonth() === month) {
+        const key = e.dateObj.getDate();
+        (eventsByDay[key] = eventsByDay[key] || []).push(e);
+      }
+    });
+    const cells = [];
+    for (let i = 0; i < startOffset; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+    return { cells, eventsByDay, year, month };
+  }, [calendarMonth, events]);
+
+  const selectedDayEvents = useMemo(() => {
+    if (!selectedDay) return [];
+    return (calendarGrid.eventsByDay[selectedDay] || []).sort((a, b) => a.event.localeCompare(b.event));
+  }, [selectedDay, calendarGrid]);
+
+  function handleCsvUpload(ev) {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    setUploadError("");
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        setEvents(parseCsvText(e.target.result));
+        setShowUpload(false);
+      } catch (err) {
+        setUploadError("Couldn't read that file. Export a CSV with Date, Event, Client, Guests, Venue, Status, Type, Value columns.");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  return (
+    <div
+      style={{
+        background: "radial-gradient(ellipse at top, #2c2418 0%, var(--ink) 45%)",
+        minHeight: "100%",
+        color: "var(--cream)",
+        fontFamily: "var(--font-body)",
+      }}
+      className="p-4 md:p-8"
+    >
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+        :root {
+          --ink: #1d1a16;
+          --panel: #262119;
+          --panel-light: #302a20;
+          --brass: #a8875e;
+          --brass-bright: #d4b98c;
+          --cream: #efe6d6;
+          --muted: #9c9186;
+          --font-display: 'Cormorant Garamond', serif;
+          --font-body: 'Work Sans', sans-serif;
+          --font-mono: 'IBM Plex Mono', monospace;
+        }
+        .esd-serif { font-family: var(--font-display); font-weight: 600; letter-spacing: 0.01em; }
+        .esd-texture {
+          background-image: repeating-linear-gradient(115deg, rgba(168,135,94,0.05) 0px, rgba(168,135,94,0.05) 1px, transparent 1px, transparent 5px);
+        }
+        .esd-mono { font-family: var(--font-mono); }
+        .esd-fade { animation: esdFadeIn 0.5s ease both; }
+        @keyframes esdFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .esd-card {
+          background: var(--panel);
+          border: 1px solid rgba(168,135,94,0.15);
+        }
+        .esd-card:hover { border-color: rgba(168,135,94,0.4); }
+        .esd-divider {
+          border-bottom: 1px dashed rgba(168,135,94,0.25);
+        }
+        .esd-scroll::-webkit-scrollbar { width: 6px; }
+        .esd-scroll::-webkit-scrollbar-thumb { background: rgba(168,135,94,0.3); border-radius: 4px; }
+        select, input { color-scheme: dark; }
+      `}</style>
+
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 esd-fade">
+        <div>
+          <p className="esd-mono text-xs tracking-widest uppercase" style={{ color: "var(--brass)" }}>
+            The Belongil · Byron Bay
+          </p>
+          <h1 className="esd-serif text-4xl md:text-5xl mt-1" style={{ color: "var(--cream)" }}>
+            Events &amp; Private Dining
+          </h1>
+          <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>
+            Kiosk · Bistro · Feu · Blind Tiger — {events.length} bookings on the books, as of {fmtDate(TODAY)}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowUpload(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm esd-fade"
+          style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.3)", color: "var(--brass-bright)" }}
+        >
+          <Upload size={16} /> Upload updated CSV
+        </button>
+      </div>
+
+      {/* Upload modal */}
+      {showUpload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }}>
+          <div className="esd-card esd-texture rounded-xl p-6 max-w-md w-full relative">
+            <button onClick={() => setShowUpload(false)} className="absolute top-4 right-4" style={{ color: "var(--muted)" }}>
+              <X size={18} />
+            </button>
+            <h3 className="esd-serif text-xl mb-2" style={{ color: "var(--cream)" }}>Refresh the ledger</h3>
+            <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>
+              In Google Sheets: File → Download → Comma Separated Values (.csv), then upload it here.
+              Expected columns: Date, Event, Client, Guests, Venue, Status, Type, Value — plus <b>Date Received</b> if you want the weekly enquiries count to work.
+            </p>
+            <input type="file" accept=".csv" onChange={handleCsvUpload} className="text-sm" style={{ color: "var(--cream)" }} />
+            {uploadError && <p className="text-sm mt-3" style={{ color: "#c17a5a" }}>{uploadError}</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Revenue row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        {[
+          { label: "Revenue captured to date (completed)", value: fmtCurrency(kpis.completedRevenue), icon: BadgeCheck, accent: "#4f7a72" },
+          { label: "Upcoming confirmed revenue", value: fmtCurrency(kpis.upcomingConfirmedRevenue), icon: CalendarClock, accent: "var(--brass)" },
+          { label: "Revenue in enquiries", value: fmtCurrency(kpis.pipelineValue), icon: FileClock, accent: "#a3583c" },
+        ].map((k, i) => (
+          <div key={i} className="esd-card esd-texture rounded-xl p-5 esd-fade" style={{ animationDelay: `${i * 60}ms`, borderColor: `${k.accent}44` }}>
+            <k.icon size={18} style={{ color: k.accent }} />
+            <p className="esd-mono text-2xl mt-2" style={{ color: "var(--cream)" }}>{k.value}</p>
+            <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{k.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* KPI row */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+        {[
+          { label: "Confirmed bookings", value: kpis.confirmedCount, icon: CalendarDays },
+          { label: "Open enquiries", value: kpis.enquiryCount, icon: FileClock },
+          { label: "Confirmed guests", value: kpis.totalGuests.toLocaleString(), icon: Users },
+          {
+            label: kpis.hasReceivedData ? "Enquiries this week" : "Enquiries this week (needs Date Received)",
+            value: kpis.hasReceivedData ? kpis.enquiriesThisWeek : "—",
+            icon: Inbox,
+          },
+          {
+            label: kpis.hasReceivedData ? "Avg. lead time" : "Avg. lead time (needs Date Received)",
+            value: kpis.hasReceivedData && kpis.avgLeadDays !== null ? `${kpis.avgLeadDays}d` : "—",
+            icon: Hourglass,
+          },
+        ].map((k, i) => (
+          <div key={i} className="esd-card esd-texture rounded-xl p-4 esd-fade" style={{ animationDelay: `${i * 60}ms` }}>
+            <k.icon size={16} style={{ color: "var(--brass)" }} />
+            <p className="esd-mono text-xl mt-2" style={{ color: "var(--cream)" }}>{k.value}</p>
+            <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{k.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Charts row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+        <div className="esd-card esd-texture rounded-xl p-4 lg:col-span-2 esd-fade">
+          <h3 className="esd-serif text-lg mb-3" style={{ color: "var(--cream)" }}>Revenue by month</h3>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={revenueByMonth} margin={{ left: 0, right: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(168,135,94,0.1)" vertical={false} />
+              <XAxis dataKey="key" tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={{ stroke: "rgba(168,135,94,0.2)" }} tickLine={false} />
+              <YAxis tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v / 1000}k`} />
+              <Tooltip
+                contentStyle={{ background: "#302a20", border: "1px solid rgba(168,135,94,0.3)", borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: "#efe6d6" }}
+                formatter={(v) => fmtCurrency(v)}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, color: "#9c9186" }} />
+              <Bar dataKey="Confirmed" stackId="a" fill={STATUS_COLORS.Confirmed} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Enquiry" stackId="a" fill={STATUS_COLORS.Enquiry} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="esd-card esd-texture rounded-xl p-4 esd-fade">
+          <h3 className="esd-serif text-lg mb-3" style={{ color: "var(--cream)" }}>Status of the book</h3>
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart>
+              <Pie data={statusBreakdown} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={3}>
+                {statusBreakdown.map((entry, i) => (
+                  <Cell key={i} fill={STATUS_COLORS[entry.name] || "#4a453e"} stroke="var(--panel)" strokeWidth={2} />
+                ))}
+              </Pie>
+              <Tooltip contentStyle={{ background: "#302a20", border: "1px solid rgba(168,135,94,0.3)", borderRadius: 8, fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 12, color: "#9c9186" }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Enquiries by type + Busiest venues */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+        <div className="esd-card esd-texture rounded-xl p-4 esd-fade">
+          <h3 className="esd-serif text-lg mb-3" style={{ color: "var(--cream)" }}>Enquiries by type</h3>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={enquiriesByType} layout="vertical" margin={{ left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(168,135,94,0.1)" horizontal={false} />
+              <XAxis type="number" tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <YAxis type="category" dataKey="name" width={110} tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background: "#302a20", border: "1px solid rgba(168,135,94,0.3)", borderRadius: 8, fontSize: 12 }} />
+              <Bar dataKey="count" fill={STATUS_COLORS.Enquiry} radius={[0, 4, 4, 0]} barSize={16} />
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>
+            "Uncategorised" is every open enquiry the sheet hasn't tagged with a Type yet.
+          </p>
+        </div>
+
+        <div className="esd-card esd-texture rounded-xl p-4 esd-fade">
+          <h3 className="esd-serif text-lg mb-3" style={{ color: "var(--cream)" }}>Busiest venues</h3>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={venueBreakdown} layout="vertical" margin={{ left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(168,135,94,0.1)" horizontal={false} />
+              <XAxis type="number" tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <YAxis type="category" dataKey="name" width={110} tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background: "#302a20", border: "1px solid rgba(168,135,94,0.3)", borderRadius: 8, fontSize: 12 }} />
+              <Bar dataKey="count" fill="var(--brass)" radius={[0, 4, 4, 0]} barSize={14} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Upcoming */}
+      <div className="grid grid-cols-1 gap-4 mb-8">
+        <div className="esd-card esd-texture rounded-xl p-4 esd-fade">
+          <h3 className="esd-serif text-lg mb-3" style={{ color: "var(--cream)" }}>Next on the calendar</h3>
+          <div className="space-y-0">
+            {upcomingList.map((e, i) => (
+              <div key={e.id} className={`flex items-center justify-between py-3 ${i !== upcomingList.length - 1 ? "esd-divider" : ""}`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full" style={{ background: STATUS_COLORS[e.status] }} />
+                  <div>
+                    <p className="text-sm" style={{ color: "var(--cream)" }}>{e.event}</p>
+                    <p className="text-xs" style={{ color: "var(--muted)" }}>{e.client} · {e.venue}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="esd-mono text-xs" style={{ color: "var(--brass-bright)" }}>{fmtDate(e.dateObj)}</p>
+                  <p className="text-xs" style={{ color: "var(--muted)" }}>{e.guestsRaw ? `${e.guestsRaw} guests` : ""}</p>
+                </div>
+              </div>
+            ))}
+            {upcomingList.length === 0 && <p className="text-sm" style={{ color: "var(--muted)" }}>Nothing dated ahead of today.</p>}
+          </div>
+        </div>
+      </div>
+
+      {/* Calendar */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+        <div className="esd-card esd-texture rounded-xl p-4 lg:col-span-2 esd-fade">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="esd-serif text-lg" style={{ color: "var(--cream)" }}>
+              {calendarMonth.toLocaleDateString("en-AU", { month: "long", year: "numeric" })}
+            </h3>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  setCalendarMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1));
+                  setSelectedDay(null);
+                }}
+                className="p-1.5 rounded-lg"
+                style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.25)", color: "var(--brass-bright)" }}
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                onClick={() => {
+                  setCalendarMonth(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1));
+                  setSelectedDay(null);
+                }}
+                className="px-2.5 py-1.5 rounded-lg text-xs"
+                style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.25)", color: "var(--muted)" }}
+              >
+                Today
+              </button>
+              <button
+                onClick={() => {
+                  setCalendarMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1));
+                  setSelectedDay(null);
+                }}
+                className="p-1.5 rounded-lg"
+                style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.25)", color: "var(--brass-bright)" }}
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+              <div key={d} className="text-center text-xs py-1" style={{ color: "var(--muted)" }}>{d}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {calendarGrid.cells.map((d, i) => {
+              if (d === null) return <div key={i} />;
+              const dayEvents = calendarGrid.eventsByDay[d] || [];
+              const isToday =
+                TODAY.getFullYear() === calendarGrid.year && TODAY.getMonth() === calendarGrid.month && TODAY.getDate() === d;
+              const isSelected = selectedDay === d;
+              return (
+                <button
+                  key={i}
+                  onClick={() => setSelectedDay(isSelected ? null : d)}
+                  className="rounded-lg p-1.5 text-left transition-colors"
+                  style={{
+                    minHeight: 56,
+                    background: isSelected ? "rgba(168,135,94,0.18)" : "var(--panel-light)",
+                    border: isToday ? "1px solid var(--brass)" : "1px solid rgba(168,135,94,0.12)",
+                  }}
+                >
+                  <span className="esd-mono text-xs" style={{ color: isToday ? "var(--brass-bright)" : "var(--muted)" }}>{d}</span>
+                  {dayEvents.length > 0 && (
+                    <div className="flex flex-wrap gap-0.5 mt-1">
+                      {dayEvents.slice(0, 4).map((e, j) => (
+                        <span key={j} className="w-1.5 h-1.5 rounded-full" style={{ background: STATUS_COLORS[e.status] }} />
+                      ))}
+                      {dayEvents.length > 4 && (
+                        <span className="text-[10px] esd-mono" style={{ color: "var(--muted)" }}>+{dayEvents.length - 4}</span>
+                      )}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="esd-card esd-texture rounded-xl p-4 esd-fade">
+          <h3 className="esd-serif text-lg mb-3" style={{ color: "var(--cream)" }}>
+            {selectedDay
+              ? new Date(calendarGrid.year, calendarGrid.month, selectedDay).toLocaleDateString("en-AU", {
+                  weekday: "long",
+                  day: "numeric",
+                  month: "short",
+                })
+              : "Select a day"}
+          </h3>
+          {!selectedDay && (
+            <p className="text-sm" style={{ color: "var(--muted)" }}>Click any date on the calendar to see what's booked.</p>
+          )}
+          {selectedDay && selectedDayEvents.length === 0 && (
+            <p className="text-sm" style={{ color: "var(--muted)" }}>Nothing on the books this day.</p>
+          )}
+          <div className="space-y-0">
+            {selectedDayEvents.map((e, i) => (
+              <div key={e.id} className={`py-2.5 ${i !== selectedDayEvents.length - 1 ? "esd-divider" : ""}`}>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_COLORS[e.status] }} />
+                  <p className="text-sm" style={{ color: "var(--cream)" }}>{e.event}</p>
+                </div>
+                <p className="text-xs mt-0.5 ml-4" style={{ color: "var(--muted)" }}>{e.client} · {e.venue}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Event ledger table */}
+      <div className="esd-card esd-texture rounded-xl p-4 esd-fade">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+          <h3 className="esd-serif text-lg" style={{ color: "var(--cream)" }}>Full ledger</h3>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.2)" }}>
+              <Search size={14} style={{ color: "var(--muted)" }} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search event, client, venue…"
+                className="bg-transparent outline-none text-sm"
+                style={{ color: "var(--cream)" }}
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="text-sm px-3 py-1.5 rounded-lg outline-none"
+              style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.2)", color: "var(--cream)" }}
+            >
+              <option value="All">All statuses</option>
+              <option value="Confirmed">Confirmed</option>
+              <option value="Completed">Completed</option>
+              <option value="Enquiry">Enquiry</option>
+              <option value="Cancelled">Cancelled</option>
+              <option value="Pending">Pending</option>
+              <option value="Unspecified">Unspecified</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto esd-scroll">
+          <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr className="esd-divider">
+                {["Date", "Event", "Client", "Venue", "Guests", "Status", "Value"].map((h) => (
+                  <th key={h} className="text-left py-2 pr-4 text-xs uppercase tracking-wide" style={{ color: "var(--brass)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((e) => (
+                <tr key={e.id} className="esd-divider">
+                  <td className="py-2 pr-4 esd-mono text-xs" style={{ color: "var(--muted)" }}>{fmtDate(e.dateObj)}</td>
+                  <td className="py-2 pr-4" style={{ color: "var(--cream)" }}>{e.event}</td>
+                  <td className="py-2 pr-4" style={{ color: "var(--muted)" }}>{e.client}</td>
+                  <td className="py-2 pr-4" style={{ color: "var(--muted)" }}>{e.venue}</td>
+                  <td className="py-2 pr-4 esd-mono text-xs" style={{ color: "var(--muted)" }}>{e.guestsRaw || "—"}</td>
+                  <td className="py-2 pr-4">
+                    <span
+                      className="text-xs px-2 py-0.5 rounded-full"
+                      style={{ background: `${STATUS_COLORS[e.status]}22`, color: STATUS_COLORS[e.status] }}
+                    >
+                      {e.status}
+                    </span>
+                  </td>
+                  <td className="py-2 pr-4 esd-mono text-xs" style={{ color: "var(--brass-bright)" }}>{fmtCurrency(e.value)}</td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr><td colSpan={7} className="py-6 text-center text-sm" style={{ color: "var(--muted)" }}>No entries match the current search and filter.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
