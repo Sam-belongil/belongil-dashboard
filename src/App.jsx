@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -12,7 +12,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { Search, CalendarDays, Users, TrendingUp, FileClock, Upload, X, Inbox, Hourglass, BadgeCheck, CalendarClock, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, CalendarDays, Users, TrendingUp, FileClock, Upload, X, Inbox, Hourglass, BadgeCheck, CalendarClock, ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Repeat } from "lucide-react";
 
 /* ---------------------------------------------------------------
    RAW DATA — seeded from the "Events" sheet.
@@ -101,6 +101,10 @@ function fmtDate(d) {
   return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function eventKey(e) {
+  return `${e.event}|${e.dateRaw}|${e.client}`.toLowerCase().trim();
+}
+
 function parseCsvRows(text) {
   const rows = [];
   let row = [];
@@ -151,7 +155,13 @@ function parseCsvText(text) {
     rIdx = idx("received"),
     evIdx = idx("event"), clIdx = idx("client"),
     gIdx = idx("guest"), vIdx = idx("venue") >= 0 ? idx("venue") : idx("location"),
-    sIdx = idx("service"), stIdx = idx("status"), tIdx = idx("type"), valIdx = idx("value");
+    sIdx = idx("service"), stIdx = idx("status"), tIdx = idx("type"), valIdx = idx("value"),
+    phIdx = idx("phone"), emIdx = idx("email"),
+    spIdx = idx("spend per head") >= 0 ? idx("spend per head") : idx("spend"),
+    depSentIdx = headers.findIndex((h) => h.includes("deposit") && h.includes("sent")),
+    depPaidIdx = headers.findIndex((h) => h.includes("deposit") && h.includes("paid")),
+    srIdx = idx("sevenrooms"), noteIdx = idx("notes") >= 0 ? idx("notes") : idx("details"),
+    briefIdx = idx("xyz");
   return rows.slice(1).map((cols, i) => {
     cols = cols.map((c) => c.trim());
     const rawVal = valIdx >= 0 ? (cols[valIdx] || "").replace(/[^0-9.]/g, "") : "";
@@ -170,6 +180,14 @@ function parseCsvText(text) {
       status: cols[stIdx] || "Unspecified",
       type: cols[tIdx] || "Uncategorised",
       value: rawVal ? Number(rawVal) : null,
+      phone: phIdx >= 0 ? cols[phIdx] || "" : "",
+      email: emIdx >= 0 ? cols[emIdx] || "" : "",
+      spendPerHead: spIdx >= 0 ? cols[spIdx] || "" : "",
+      depositSent: depSentIdx >= 0 ? cols[depSentIdx] || "" : "",
+      depositPaid: depPaidIdx >= 0 ? cols[depPaidIdx] || "" : "",
+      sevenrooms: srIdx >= 0 ? cols[srIdx] || "" : "",
+      notes: noteIdx >= 0 ? cols[noteIdx] || "" : "",
+      brief: briefIdx >= 0 ? cols[briefIdx] || "" : "",
     };
   });
 }
@@ -179,13 +197,15 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const STATUS_COLORS = {
   Confirmed: "#4f7a72",
   Completed: "#7a9c8e",
-  Enquiry: "#a3583c",
-  Cancelled: "#7a4a44",
+  Enquiry: "#d1932f",
+  Cancelled: "#8b1e1e",
   Pending: "#8f8577",
   Unspecified: "#4a453e",
 };
 
-const TODAY = new Date(2026, 6, 16); // 16 Jul 2026
+const TYPE_COLORS = ["#d4b98c", "#a8875e", "#7a6244", "#4f7a72", "#4a3d2c"];
+
+const TODAY = new Date(); // always the real current date
 
 function weekRange(date) {
   const d = new Date(date);
@@ -220,12 +240,61 @@ export default function EventsSalesDashboard() {
       status: e.status || "Unspecified",
       type: e.type || "Uncategorised",
       value: e.value,
+      phone: "",
+      email: "",
+      spendPerHead: "",
+      depositSent: "",
+      depositPaid: "",
+      sevenrooms: "",
+      notes: "",
+      brief: "",
     }))
   );
 
   const [statusFilter, setStatusFilter] = useState("All");
+  const [showLedger, setShowLedger] = useState(false);
   const [search, setSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [savedBriefs, setSavedBriefs] = useState({});
+  const [editingBrief, setEditingBrief] = useState(false);
+  const [draftBrief, setDraftBrief] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const stored = await window.storage.get("runsheets", true);
+        if (stored?.value) setSavedBriefs(JSON.parse(stored.value));
+      } catch {
+        // no saved run sheets yet — that's fine
+      }
+    })();
+  }, []);
+
+  function saveBrief(key, text) {
+    setSavedBriefs((prev) => {
+      const next = { ...prev, [key]: { text, updatedAt: new Date().toISOString() } };
+      window.storage.set("runsheets", JSON.stringify(next), true).catch(() => {});
+      return next;
+    });
+  }
+
+  function fmtEditedAt(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" }) +
+      " at " + d.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function getSavedBrief(key) {
+    const v = savedBriefs[key];
+    if (v === undefined) return undefined;
+    return typeof v === "string" ? { text: v, updatedAt: null } : v;
+  }
+
+  useEffect(() => {
+    setEditingBrief(false);
+  }, [selectedEvent]);
   const [uploadError, setUploadError] = useState("");
 
   const filtered = useMemo(() => {
@@ -251,6 +320,7 @@ export default function EventsSalesDashboard() {
     const confirmed = events.filter((e) => e.status === "Confirmed");
     const completed = events.filter((e) => e.status === "Completed");
     const enquiries = events.filter((e) => e.status === "Enquiry");
+    const cancelled = events.filter((e) => e.status === "Cancelled");
     const completedRevenue = completed.reduce((s, e) => s + (e.value || 0), 0);
     const upcomingConfirmedRevenue = confirmed.reduce((s, e) => s + (e.value || 0), 0);
     const confirmedRevenue = completedRevenue + upcomingConfirmedRevenue;
@@ -268,6 +338,14 @@ export default function EventsSalesDashboard() {
           withLead.reduce((s, e) => s + (e.dateObj - e.receivedObj) / (1000 * 60 * 60 * 24), 0) / withLead.length
         )
       : null;
+    const resolvedCount = confirmed.length + completed.length + enquiries.length + cancelled.length;
+    const conversionRate = resolvedCount
+      ? Math.round(((confirmed.length + completed.length) / resolvedCount) * 100)
+      : null;
+    const STALE_DAYS = 14;
+    const staleEnquiries = events.filter(
+      (e) => e.status === "Enquiry" && e.receivedObj && (TODAY - e.receivedObj) / (1000 * 60 * 60 * 24) >= STALE_DAYS
+    );
     return {
       confirmedRevenue,
       completedRevenue,
@@ -283,19 +361,84 @@ export default function EventsSalesDashboard() {
       avgLeadDays,
       weekStart: start,
       weekEnd: end,
+      conversionRate,
+      resolvedCount,
+      staleCount: staleEnquiries.length,
+      staleDays: STALE_DAYS,
     };
   }, [events]);
+
+  const staleEnquiriesList = useMemo(() => {
+    const STALE_DAYS = 14;
+    return events
+      .filter((e) => e.status === "Enquiry" && e.receivedObj && (TODAY - e.receivedObj) / (1000 * 60 * 60 * 24) >= STALE_DAYS)
+      .sort((a, b) => a.receivedObj - b.receivedObj);
+  }, [events]);
+  const [showStaleEnquiries, setShowStaleEnquiries] = useState(false);
+
+  const clientCounts = useMemo(() => {
+    const map = {};
+    events.forEach((e) => {
+      const c = (e.client || "").trim().toLowerCase();
+      if (c && c !== "—") map[c] = (map[c] || 0) + 1;
+    });
+    return map;
+  }, [events]);
+  const repeatClientNames = useMemo(
+    () => new Set(Object.keys(clientCounts).filter((c) => clientCounts[c] > 1)),
+    [clientCounts]
+  );
+  const repeatClientCount = repeatClientNames.size;
+  function isRepeatClient(e) {
+    return repeatClientNames.has((e.client || "").trim().toLowerCase());
+  }
+
+  const weekEnquiriesList = useMemo(
+    () =>
+      events
+        .filter(
+          (e) => e.status === "Enquiry" && e.receivedObj && e.receivedObj >= kpis.weekStart && e.receivedObj <= kpis.weekEnd
+        )
+        .sort((a, b) => b.receivedObj - a.receivedObj),
+    [events, kpis.weekStart, kpis.weekEnd]
+  );
+  const [showWeekEnquiries, setShowWeekEnquiries] = useState(false);
 
   const revenueByMonth = useMemo(() => {
     const map = {};
     events.forEach((e) => {
       if (!e.dateObj) return;
       const key = `${MONTHS[e.dateObj.getMonth()]} ${String(e.dateObj.getFullYear()).slice(2)}`;
-      if (!map[key]) map[key] = { key, sortKey: e.dateObj.getFullYear() * 12 + e.dateObj.getMonth(), Confirmed: 0, Enquiry: 0 };
+      if (!map[key]) map[key] = { key, sortKey: e.dateObj.getFullYear() * 12 + e.dateObj.getMonth(), Confirmed: 0, Enquiry: 0, Cancelled: 0 };
       if (e.status === "Confirmed") map[key].Confirmed += e.value || 0;
       if (e.status === "Enquiry") map[key].Enquiry += e.value || 0;
+      if (e.status === "Cancelled") map[key].Cancelled += e.value || 0;
     });
     return Object.values(map).sort((a, b) => a.sortKey - b.sortKey);
+  }, [events]);
+
+  const bookingsByMonth = useMemo(() => {
+    const map = {};
+    events.forEach((e) => {
+      if (!e.dateObj) return;
+      const key = `${MONTHS[e.dateObj.getMonth()]} ${String(e.dateObj.getFullYear()).slice(2)}`;
+      if (!map[key]) map[key] = { key, sortKey: e.dateObj.getFullYear() * 12 + e.dateObj.getMonth(), Confirmed: 0, Completed: 0, Enquiry: 0, Cancelled: 0 };
+      if (map[key][e.status] !== undefined) map[key][e.status] += 1;
+    });
+    return Object.values(map).sort((a, b) => a.sortKey - b.sortKey);
+  }, [events]);
+
+  const avgSpendByVenue = useMemo(() => {
+    const map = {};
+    events.forEach((e) => {
+      const spend = parseFloat((e.spendPerHead || "").replace(/[^0-9.]/g, ""));
+      if (!spend || !e.venue || e.venue === "TBC") return;
+      if (!map[e.venue]) map[e.venue] = [];
+      map[e.venue].push(spend);
+    });
+    return Object.entries(map)
+      .map(([name, values]) => ({ name, avg: Math.round(values.reduce((s, v) => s + v, 0) / values.length) }))
+      .sort((a, b) => b.avg - a.avg);
   }, [events]);
 
   const statusBreakdown = useMemo(() => {
@@ -467,6 +610,280 @@ export default function EventsSalesDashboard() {
         </div>
       )}
 
+      {/* Stale enquiries modal */}
+      {showStaleEnquiries && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.65)" }}>
+          <div className="esd-card esd-texture rounded-xl p-6 max-w-md w-full relative esd-scroll" style={{ maxHeight: "80vh", overflowY: "auto" }}>
+            <button onClick={() => setShowStaleEnquiries(false)} className="absolute top-4 right-4" style={{ color: "var(--muted)" }}>
+              <X size={18} />
+            </button>
+            <p className="esd-mono text-xs tracking-widest uppercase mb-1" style={{ color: "#8b1e1e" }}>
+              {kpis.staleDays}+ days with no follow-up
+            </p>
+            <h3 className="esd-serif text-xl mb-4" style={{ color: "var(--cream)" }}>
+              Stale Enquiries ({staleEnquiriesList.length})
+            </h3>
+            <div className="space-y-0">
+              {staleEnquiriesList.map((e, i) => {
+                const daysOld = Math.round((TODAY - e.receivedObj) / (1000 * 60 * 60 * 24));
+                return (
+                  <div
+                    key={e.id}
+                    className={`py-3 ${i !== staleEnquiriesList.length - 1 ? "esd-divider" : ""}`}
+                    onClick={() => {
+                      setShowStaleEnquiries(false);
+                      setSelectedEvent(e);
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm" style={{ color: "var(--cream)" }}>{e.event}</p>
+                      <span className="esd-mono text-xs px-2 py-0.5 rounded-full" style={{ background: "#8b1e1e22", color: "#8b1e1e" }}>
+                        {daysOld}d old
+                      </span>
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+                      {e.client} · {e.venue} · received {fmtDate(e.receivedObj)}
+                    </p>
+                  </div>
+                );
+              })}
+              {staleEnquiriesList.length === 0 && (
+                <p className="text-sm" style={{ color: "var(--muted)" }}>Nothing stale right now.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Week enquiries modal */}
+      {showWeekEnquiries && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.65)" }}>
+          <div className="esd-card esd-texture rounded-xl p-6 max-w-md w-full relative esd-scroll" style={{ maxHeight: "80vh", overflowY: "auto" }}>
+            <button onClick={() => setShowWeekEnquiries(false)} className="absolute top-4 right-4" style={{ color: "var(--muted)" }}>
+              <X size={18} />
+            </button>
+            <p className="esd-mono text-xs tracking-widest uppercase mb-1" style={{ color: "var(--brass)" }}>
+              {fmtDate(kpis.weekStart)} – {fmtDate(kpis.weekEnd)}
+            </p>
+            <h3 className="esd-serif text-xl mb-4" style={{ color: "var(--cream)" }}>
+              Enquiries Received This Week ({weekEnquiriesList.length})
+            </h3>
+            <div className="space-y-0">
+              {weekEnquiriesList.map((e, i) => (
+                <div
+                  key={e.id}
+                  className={`py-3 ${i !== weekEnquiriesList.length - 1 ? "esd-divider" : ""}`}
+                  onClick={() => {
+                    setShowWeekEnquiries(false);
+                    setSelectedEvent(e);
+                  }}
+                  style={{ cursor: "pointer" }}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm" style={{ color: "var(--cream)" }}>{e.event}</p>
+                    <p className="esd-mono text-xs" style={{ color: "var(--brass-bright)" }}>{fmtDate(e.receivedObj)}</p>
+                  </div>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+                    {e.client} · {e.venue} · {e.guestsRaw ? `${e.guestsRaw} guests` : "guests TBC"} · for {fmtDate(e.dateObj)}
+                  </p>
+                </div>
+              ))}
+              {weekEnquiriesList.length === 0 && (
+                <p className="text-sm" style={{ color: "var(--muted)" }}>Nothing received this week yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Run Sheet modal */}
+      {selectedEvent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.65)" }}>
+          <div className="esd-card esd-texture rounded-xl p-6 max-w-lg w-full relative esd-scroll" style={{ maxHeight: "88vh", overflowY: "auto" }}>
+            <button onClick={() => setSelectedEvent(null)} className="absolute top-4 right-4" style={{ color: "var(--muted)" }}>
+              <X size={18} />
+            </button>
+
+            <p className="esd-mono text-xs tracking-widest uppercase mb-1" style={{ color: "var(--brass)" }}>Brief &amp; Run Sheet</p>
+            <h3 className="esd-serif text-2xl mb-1" style={{ color: "var(--cream)" }}>{selectedEvent.event}</h3>
+            <div className="flex items-center gap-2 mb-4">
+              <span
+                className="text-xs px-2 py-0.5 rounded-full"
+                style={{ background: `${STATUS_COLORS[selectedEvent.status]}22`, color: STATUS_COLORS[selectedEvent.status] }}
+              >
+                {selectedEvent.status}
+              </span>
+              <span className="text-xs" style={{ color: "var(--muted)" }}>{selectedEvent.type}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Date</p>
+                <p className="text-sm" style={{ color: "var(--cream)" }}>{fmtDate(selectedEvent.dateObj)}</p>
+              </div>
+              <div>
+                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Venue</p>
+                <p className="text-sm" style={{ color: "var(--cream)" }}>{selectedEvent.venue}</p>
+              </div>
+              <div>
+                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Guests</p>
+                <p className="text-sm" style={{ color: "var(--cream)" }}>{selectedEvent.guestsRaw || "—"}</p>
+              </div>
+              <div>
+                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Service</p>
+                <p className="text-sm" style={{ color: "var(--cream)" }}>{selectedEvent.service || "—"}</p>
+              </div>
+            </div>
+
+            <div className="esd-divider mb-4" />
+
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <p className="esd-mono text-xs uppercase" style={{ color: "var(--brass)" }}>Event Brief &amp; Run Sheet</p>
+                {!editingBrief && (() => {
+                  const savedEntry = getSavedBrief(eventKey(selectedEvent));
+                  const label = savedEntry?.updatedAt
+                    ? `Last edited ${fmtEditedAt(savedEntry.updatedAt)}`
+                    : savedEntry
+                    ? null
+                    : selectedEvent.brief
+                    ? "From sheet, not yet edited here"
+                    : null;
+                  return label ? (
+                    <span
+                      className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                      style={{ color: "#1a1a1a", background: "#efe6d6" }}
+                    >
+                      {label}
+                    </span>
+                  ) : null;
+                })()}
+              </div>
+              {!editingBrief ? (
+                <button
+                  onClick={() => {
+                    const key = eventKey(selectedEvent);
+                    setDraftBrief(getSavedBrief(key)?.text ?? selectedEvent.brief ?? "");
+                    setEditingBrief(true);
+                  }}
+                  className="text-xs underline"
+                  style={{ color: "var(--brass-bright)" }}
+                >
+                  Edit
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setEditingBrief(false)}
+                    className="text-xs"
+                    style={{ color: "var(--muted)" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      saveBrief(eventKey(selectedEvent), draftBrief);
+                      setEditingBrief(false);
+                    }}
+                    className="text-xs underline"
+                    style={{ color: "var(--brass-bright)" }}
+                  >
+                    Save
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {editingBrief ? (
+              <textarea
+                className="w-full text-sm p-3 rounded-lg mb-4"
+                style={{
+                  color: "var(--cream)",
+                  background: "var(--panel-light)",
+                  border: "1px solid rgba(168,135,94,0.4)",
+                  lineHeight: 1.6,
+                  minHeight: 220,
+                  outline: "none",
+                }}
+                value={draftBrief}
+                onChange={(e) => setDraftBrief(e.target.value)}
+              />
+            ) : (() => {
+              const key = eventKey(selectedEvent);
+              const saved = getSavedBrief(key);
+              const displayedBrief = saved ? saved.text : selectedEvent.brief;
+              return displayedBrief ? (
+                <div
+                  className="text-sm whitespace-pre-wrap mb-4 p-3 rounded-lg"
+                  style={{ color: "var(--cream)", background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.25)", lineHeight: 1.6 }}
+                >
+                  {displayedBrief}
+                </div>
+              ) : (
+                <p className="text-sm mb-4" style={{ color: "var(--muted)", fontStyle: "italic" }}>
+                  No brief on file yet — click Edit to write one, or add it to the "XYZ" column in the sheet and re-upload.
+                </p>
+              );
+            })()}
+
+            <div className="esd-divider mb-4" />
+
+            <p className="esd-mono text-xs uppercase mb-2" style={{ color: "var(--brass)" }}>Client</p>
+            <div className="grid grid-cols-1 gap-1.5 mb-4 text-sm" style={{ color: "var(--cream)" }}>
+              <p className="flex items-center gap-1.5">
+                {selectedEvent.client}
+                {isRepeatClient(selectedEvent) && (
+                  <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: "rgba(168,135,94,0.2)", color: "var(--brass-bright)" }}>
+                    repeat client
+                  </span>
+                )}
+              </p>
+              {selectedEvent.phone && <p style={{ color: "var(--muted)" }}>{selectedEvent.phone}</p>}
+              {selectedEvent.email && <p style={{ color: "var(--muted)" }}>{selectedEvent.email}</p>}
+            </div>
+
+            <div className="esd-divider mb-4" />
+
+            <p className="esd-mono text-xs uppercase mb-2" style={{ color: "var(--brass)" }}>Financials</p>
+            <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
+              <div>
+                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Value</p>
+                <p style={{ color: "var(--brass-bright)" }}>{fmtCurrency(selectedEvent.value)}</p>
+              </div>
+              <div>
+                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Spend per head</p>
+                <p style={{ color: "var(--cream)" }}>{selectedEvent.spendPerHead || "—"}</p>
+              </div>
+              <div>
+                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Deposit sent</p>
+                <p style={{ color: "var(--cream)" }}>{selectedEvent.depositSent || "—"}</p>
+              </div>
+              <div>
+                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Deposit paid</p>
+                <p style={{ color: "var(--cream)" }}>{selectedEvent.depositPaid || "—"}</p>
+              </div>
+            </div>
+
+            {selectedEvent.sevenrooms && (
+              <>
+                <div className="esd-divider mb-4" />
+                <p className="esd-mono text-xs uppercase mb-1" style={{ color: "var(--brass)" }}>Sevenrooms Booking</p>
+                <p className="text-sm mb-4" style={{ color: "var(--cream)" }}>{selectedEvent.sevenrooms}</p>
+              </>
+            )}
+
+            {selectedEvent.notes && (
+              <>
+                <div className="esd-divider mb-4" />
+                <p className="esd-mono text-xs uppercase mb-1" style={{ color: "var(--brass)" }}>Additional Notes</p>
+                <p className="text-sm whitespace-pre-wrap" style={{ color: "var(--cream)" }}>{selectedEvent.notes}</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Revenue row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
         {[
@@ -483,7 +900,7 @@ export default function EventsSalesDashboard() {
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
         {[
           { label: "Confirmed bookings", value: kpis.confirmedCount, icon: CalendarDays },
           { label: "Open enquiries", value: kpis.enquiryCount, icon: FileClock },
@@ -492,14 +909,36 @@ export default function EventsSalesDashboard() {
             label: kpis.hasReceivedData ? "Enquiries this week" : "Enquiries this week (needs Date Received)",
             value: kpis.hasReceivedData ? kpis.enquiriesThisWeek : "—",
             icon: Inbox,
+            onClick: kpis.hasReceivedData ? () => setShowWeekEnquiries(true) : null,
           },
           {
             label: kpis.hasReceivedData ? "Avg. lead time" : "Avg. lead time (needs Date Received)",
             value: kpis.hasReceivedData && kpis.avgLeadDays !== null ? `${kpis.avgLeadDays}d` : "—",
             icon: Hourglass,
           },
+          {
+            label: "Enquiry → booking rate",
+            value: kpis.conversionRate !== null ? `${kpis.conversionRate}%` : "—",
+            icon: TrendingUp,
+          },
+          {
+            label: kpis.hasReceivedData ? `Stale enquiries (${kpis.staleDays}+ days)` : "Stale enquiries (needs Date Received)",
+            value: kpis.hasReceivedData ? kpis.staleCount : "—",
+            icon: AlertTriangle,
+            onClick: kpis.hasReceivedData && kpis.staleCount > 0 ? () => setShowStaleEnquiries(true) : null,
+          },
+          {
+            label: "Repeat clients",
+            value: repeatClientCount,
+            icon: Repeat,
+          },
         ].map((k, i) => (
-          <div key={i} className="esd-card esd-texture rounded-xl p-4 esd-fade" style={{ animationDelay: `${i * 60}ms` }}>
+          <div
+            key={i}
+            className="esd-card esd-texture rounded-xl p-4 esd-fade"
+            style={{ animationDelay: `${i * 60}ms`, cursor: k.onClick ? "pointer" : "default" }}
+            onClick={k.onClick || undefined}
+          >
             <k.icon size={16} style={{ color: "var(--brass)" }} />
             <p className="esd-mono text-xl mt-2" style={{ color: "var(--cream)" }}>{k.value}</p>
             <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{k.label}</p>
@@ -523,7 +962,8 @@ export default function EventsSalesDashboard() {
               />
               <Legend wrapperStyle={{ fontSize: 12, color: "#9c9186" }} />
               <Bar dataKey="Confirmed" stackId="a" fill={STATUS_COLORS.Confirmed} radius={[0, 0, 0, 0]} />
-              <Bar dataKey="Enquiry" stackId="a" fill={STATUS_COLORS.Enquiry} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Enquiry" stackId="a" fill={STATUS_COLORS.Enquiry} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Cancelled" stackId="a" fill={STATUS_COLORS.Cancelled} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -544,6 +984,44 @@ export default function EventsSalesDashboard() {
         </div>
       </div>
 
+      {/* Bookings by month + Avg spend per head */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+        <div className="esd-card esd-texture rounded-xl p-4 lg:col-span-2 esd-fade">
+          <h3 className="esd-serif text-lg mb-3" style={{ color: "var(--cream)" }}>Bookings by month</h3>
+          <p className="text-xs mb-2" style={{ color: "var(--muted)" }}>Count of events, not dollars — for staffing and capacity planning.</p>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={bookingsByMonth} margin={{ left: 0, right: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(168,135,94,0.1)" vertical={false} />
+              <XAxis dataKey="key" tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={{ stroke: "rgba(168,135,94,0.2)" }} tickLine={false} />
+              <YAxis tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip contentStyle={{ background: "#302a20", border: "1px solid rgba(168,135,94,0.3)", borderRadius: 8, fontSize: 12 }} labelStyle={{ color: "#efe6d6" }} />
+              <Legend wrapperStyle={{ fontSize: 12, color: "#9c9186" }} />
+              <Bar dataKey="Confirmed" stackId="b" fill={STATUS_COLORS.Confirmed} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Completed" stackId="b" fill={STATUS_COLORS.Completed} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Enquiry" stackId="b" fill={STATUS_COLORS.Enquiry} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Cancelled" stackId="b" fill={STATUS_COLORS.Cancelled} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="esd-card esd-texture rounded-xl p-4 esd-fade">
+          <h3 className="esd-serif text-lg mb-3" style={{ color: "var(--cream)" }}>Avg. spend per head</h3>
+          {avgSpendByVenue.length ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={avgSpendByVenue} layout="vertical" margin={{ left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(168,135,94,0.1)" horizontal={false} />
+                <XAxis type="number" tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                <YAxis type="category" dataKey="name" width={90} tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ background: "#302a20", border: "1px solid rgba(168,135,94,0.3)", borderRadius: 8, fontSize: 12 }} formatter={(v) => `$${v}/head`} />
+                <Bar dataKey="avg" fill="var(--brass)" radius={[0, 4, 4, 0]} barSize={16} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-sm" style={{ color: "var(--muted)" }}>No Spend Per Head data in the sheet yet.</p>
+          )}
+        </div>
+      </div>
+
       {/* Enquiries by type + Busiest venues */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
         <div className="esd-card esd-texture rounded-xl p-4 esd-fade">
@@ -554,7 +1032,11 @@ export default function EventsSalesDashboard() {
               <XAxis type="number" tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
               <YAxis type="category" dataKey="name" width={110} tick={{ fill: "#9c9186", fontSize: 11 }} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={{ background: "#302a20", border: "1px solid rgba(168,135,94,0.3)", borderRadius: 8, fontSize: 12 }} />
-              <Bar dataKey="count" fill={STATUS_COLORS.Enquiry} radius={[0, 4, 4, 0]} barSize={16} />
+              <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={16}>
+                {enquiriesByType.map((_, i) => (
+                  <Cell key={i} fill={TYPE_COLORS[i % TYPE_COLORS.length]} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
           <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>
@@ -582,7 +1064,12 @@ export default function EventsSalesDashboard() {
           <h3 className="esd-serif text-lg mb-3" style={{ color: "var(--cream)" }}>Next on the calendar</h3>
           <div className="space-y-0">
             {upcomingList.map((e, i) => (
-              <div key={e.id} className={`flex items-center justify-between py-3 ${i !== upcomingList.length - 1 ? "esd-divider" : ""}`}>
+              <div
+                key={e.id}
+                className={`flex items-center justify-between py-3 ${i !== upcomingList.length - 1 ? "esd-divider" : ""}`}
+                onClick={() => setSelectedEvent(e)}
+                style={{ cursor: "pointer" }}
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-2 h-2 rounded-full" style={{ background: STATUS_COLORS[e.status] }} />
                   <div>
@@ -700,7 +1187,12 @@ export default function EventsSalesDashboard() {
           )}
           <div className="space-y-0">
             {selectedDayEvents.map((e, i) => (
-              <div key={e.id} className={`py-2.5 ${i !== selectedDayEvents.length - 1 ? "esd-divider" : ""}`}>
+              <div
+                key={e.id}
+                className={`py-2.5 ${i !== selectedDayEvents.length - 1 ? "esd-divider" : ""}`}
+                onClick={() => setSelectedEvent(e)}
+                style={{ cursor: "pointer" }}
+              >
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_COLORS[e.status] }} />
                   <p className="text-sm" style={{ color: "var(--cream)" }}>{e.event}</p>
@@ -714,70 +1206,94 @@ export default function EventsSalesDashboard() {
 
       {/* Event ledger table */}
       <div className="esd-card esd-texture rounded-xl p-4 esd-fade">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
-          <h3 className="esd-serif text-lg" style={{ color: "var(--cream)" }}>Full ledger</h3>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.2)" }}>
-              <Search size={14} style={{ color: "var(--muted)" }} />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search event, client, venue…"
-                className="bg-transparent outline-none text-sm"
-                style={{ color: "var(--cream)" }}
-              />
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3" style={{ marginBottom: showLedger ? 16 : 0 }}>
+          <button
+            onClick={() => setShowLedger((v) => !v)}
+            className="flex items-center gap-2"
+            style={{ color: "var(--cream)" }}
+          >
+            <h3 className="esd-serif text-lg">Full ledger</h3>
+            <span className="text-xs" style={{ color: "var(--muted)" }}>({events.length} events)</span>
+            <ChevronDown size={16} style={{ color: "var(--brass)", transform: showLedger ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+          </button>
+          {showLedger && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.2)" }}>
+                <Search size={14} style={{ color: "var(--muted)" }} />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search event, client, venue…"
+                  className="bg-transparent outline-none text-sm"
+                  style={{ color: "var(--cream)" }}
+                />
+              </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="text-sm px-3 py-1.5 rounded-lg outline-none"
+                style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.2)", color: "var(--cream)" }}
+              >
+                <option value="All">All statuses</option>
+                <option value="Confirmed">Confirmed</option>
+                <option value="Completed">Completed</option>
+                <option value="Enquiry">Enquiry</option>
+                <option value="Cancelled">Cancelled</option>
+                <option value="Pending">Pending</option>
+                <option value="Unspecified">Unspecified</option>
+              </select>
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-sm px-3 py-1.5 rounded-lg outline-none"
-              style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.2)", color: "var(--cream)" }}
-            >
-              <option value="All">All statuses</option>
-              <option value="Confirmed">Confirmed</option>
-              <option value="Completed">Completed</option>
-              <option value="Enquiry">Enquiry</option>
-              <option value="Cancelled">Cancelled</option>
-              <option value="Pending">Pending</option>
-              <option value="Unspecified">Unspecified</option>
-            </select>
-          </div>
+          )}
         </div>
 
-        <div className="overflow-x-auto esd-scroll">
-          <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
-            <thead>
-              <tr className="esd-divider">
-                {["Date", "Event", "Client", "Venue", "Guests", "Status", "Value"].map((h) => (
-                  <th key={h} className="text-left py-2 pr-4 text-xs uppercase tracking-wide" style={{ color: "var(--brass)" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((e) => (
-                <tr key={e.id} className="esd-divider">
-                  <td className="py-2 pr-4 esd-mono text-xs" style={{ color: "var(--muted)" }}>{fmtDate(e.dateObj)}</td>
-                  <td className="py-2 pr-4" style={{ color: "var(--cream)" }}>{e.event}</td>
-                  <td className="py-2 pr-4" style={{ color: "var(--muted)" }}>{e.client}</td>
-                  <td className="py-2 pr-4" style={{ color: "var(--muted)" }}>{e.venue}</td>
-                  <td className="py-2 pr-4 esd-mono text-xs" style={{ color: "var(--muted)" }}>{e.guestsRaw || "—"}</td>
-                  <td className="py-2 pr-4">
-                    <span
-                      className="text-xs px-2 py-0.5 rounded-full"
-                      style={{ background: `${STATUS_COLORS[e.status]}22`, color: STATUS_COLORS[e.status] }}
-                    >
-                      {e.status}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-4 esd-mono text-xs" style={{ color: "var(--brass-bright)" }}>{fmtCurrency(e.value)}</td>
+        {showLedger && (
+          <div className="overflow-x-auto esd-scroll">
+            <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr className="esd-divider">
+                  {["Date", "Event", "Client", "Venue", "Guests", "Status", "Value"].map((h) => (
+                    <th key={h} className="text-left py-2 pr-4 text-xs uppercase tracking-wide" style={{ color: "var(--brass)" }}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={7} className="py-6 text-center text-sm" style={{ color: "var(--muted)" }}>No entries match the current search and filter.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filtered.map((e) => (
+                  <tr
+                    key={e.id}
+                    className="esd-divider"
+                    onClick={() => setSelectedEvent(e)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <td className="py-2 pr-4 esd-mono text-xs" style={{ color: "var(--muted)" }}>{fmtDate(e.dateObj)}</td>
+                    <td className="py-2 pr-4" style={{ color: "var(--cream)" }}>{e.event}</td>
+                    <td className="py-2 pr-4" style={{ color: "var(--muted)" }}>
+                      {e.client}
+                      {isRepeatClient(e) && (
+                        <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full" style={{ background: "rgba(168,135,94,0.2)", color: "var(--brass-bright)" }}>
+                          repeat
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4" style={{ color: "var(--muted)" }}>{e.venue}</td>
+                    <td className="py-2 pr-4 esd-mono text-xs" style={{ color: "var(--muted)" }}>{e.guestsRaw || "—"}</td>
+                    <td className="py-2 pr-4">
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full"
+                        style={{ background: `${STATUS_COLORS[e.status]}22`, color: STATUS_COLORS[e.status] }}
+                      >
+                        {e.status}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4 esd-mono text-xs" style={{ color: "var(--brass-bright)" }}>{fmtCurrency(e.value)}</td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && (
+                  <tr><td colSpan={7} className="py-6 text-center text-sm" style={{ color: "var(--muted)" }}>No entries match the current search and filter.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
