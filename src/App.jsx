@@ -12,7 +12,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { Search, CalendarDays, Users, TrendingUp, FileClock, Upload, X, Inbox, Hourglass, BadgeCheck, CalendarClock, ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Repeat } from "lucide-react";
+import { Search, CalendarDays, Users, TrendingUp, FileClock, Upload, X, Inbox, Hourglass, BadgeCheck, CalendarClock, ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Repeat, Plus } from "lucide-react";
 
 /* ---------------------------------------------------------------
    RAW DATA — seeded from the "Events" sheet.
@@ -100,6 +100,65 @@ function parseGuests(str) {
   return Number.isFinite(n) ? n : null;
 }
 
+function makeUid() {
+  return "e" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// Convert a plain, storable record into the computed shape the UI uses (adds Date objects etc).
+function hydrateEvent(raw) {
+  return {
+    uid: raw.uid || makeUid(),
+    dateObj: parseDate(raw.date || ""),
+    dateRaw: raw.date || "",
+    receivedObj: raw.received ? parseDate(raw.received) : null,
+    receivedRaw: raw.received || "",
+    event: raw.event || "Untitled",
+    client: raw.client || "—",
+    guestsRaw: raw.guests || "",
+    guestsNum: parseGuests(raw.guests || ""),
+    venue: raw.venue || "TBC",
+    service: raw.service || "",
+    status: raw.status || "Unspecified",
+    type: raw.type || "Uncategorised",
+    value: raw.value ?? null,
+    phone: raw.phone || "",
+    email: raw.email || "",
+    spendPerHead: raw.spendPerHead || "",
+    depositSent: raw.depositSent || "",
+    depositPaid: raw.depositPaid || "",
+    sevenrooms: raw.sevenrooms || "",
+    notes: raw.notes || "",
+    brief: raw.brief || "",
+    briefUpdatedAt: raw.briefUpdatedAt || null,
+  };
+}
+
+// Strip a hydrated event back down to the plain, JSON-storable shape (drop Date objects).
+function dehydrateEvent(e) {
+  return {
+    uid: e.uid,
+    date: e.dateRaw,
+    received: e.receivedRaw,
+    event: e.event,
+    client: e.client,
+    guests: e.guestsRaw,
+    venue: e.venue,
+    service: e.service,
+    status: e.status,
+    type: e.type,
+    value: e.value,
+    phone: e.phone,
+    email: e.email,
+    spendPerHead: e.spendPerHead,
+    depositSent: e.depositSent,
+    depositPaid: e.depositPaid,
+    sevenrooms: e.sevenrooms,
+    notes: e.notes,
+    brief: e.brief,
+    briefUpdatedAt: e.briefUpdatedAt,
+  };
+}
+
 function fmtCurrency(n) {
   if (n === null || n === undefined) return "—";
   return "$" + n.toLocaleString("en-AU");
@@ -175,7 +234,7 @@ function parseCsvText(text) {
     cols = cols.map((c) => c.trim());
     const rawVal = valIdx >= 0 ? (cols[valIdx] || "").replace(/[^0-9.]/g, "") : "";
     return {
-      id: i,
+      uid: makeUid(),
       dateObj: parseDate(cols[dIdx] || ""),
       dateRaw: cols[dIdx] || "",
       receivedObj: rIdx >= 0 ? parseDate(cols[rIdx] || "") : null,
@@ -232,60 +291,167 @@ function weekRange(date) {
 /* ---------------------------------------------------------------
    COMPONENT
 ----------------------------------------------------------------- */
-export default function EventsSalesDashboard() {
-  const [events, setEvents] = useState(() =>
-    RAW_EVENTS.map((e, i) => ({
-      id: i,
-      dateObj: parseDate(e.date),
-      receivedObj: e.received ? parseDate(e.received) : null,
-      receivedRaw: e.received || "",
-      dateRaw: e.date,
-      event: e.event || "Untitled",
-      client: e.client || "—",
-      guestsRaw: e.guests,
-      guestsNum: parseGuests(e.guests),
-      venue: e.venue || "TBC",
-      service: e.service || "",
-      status: e.status || "Unspecified",
-      type: e.type || "Uncategorised",
-      value: e.value,
-      phone: e.phone || "",
-      email: e.email || "",
-      spendPerHead: e.spendPerHead || "",
-      depositSent: e.depositSent || "",
-      depositPaid: e.depositPaid || "",
-      sevenrooms: e.sevenrooms || "",
-      notes: e.notes || "",
-      brief: e.brief || "",
-    }))
+function AddEventModal({ onClose, onSave }) {
+  const [form, setForm] = useState({
+    date: "", received: "", event: "", client: "", guests: "", venue: "",
+    service: "", status: "Enquiry", type: "", value: "",
+  });
+  const field = (key, patch) => setForm((f) => ({ ...f, ...patch }));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.65)" }}>
+      <div className="esd-card esd-texture rounded-xl p-6 max-w-md w-full relative">
+        <button onClick={onClose} className="absolute top-4 right-4" style={{ color: "var(--muted)" }}>
+          <X size={18} />
+        </button>
+        <h3 className="esd-serif text-xl mb-4" style={{ color: "var(--cream)" }}>Add event</h3>
+
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <input className="esd-input" placeholder="Event name" value={form.event} onChange={(e) => field("event", { event: e.target.value })} />
+          <select className="esd-input" value={form.status} onChange={(e) => field("status", { status: e.target.value })}>
+            {["Enquiry", "Confirmed", "Completed", "Cancelled", "Pending", "Unspecified"].map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <div>
+            <span className="esd-label">Event date (DD/MM/YYYY)</span>
+            <input className="esd-input" value={form.date} onChange={(e) => field("date", { date: e.target.value })} />
+          </div>
+          <div>
+            <span className="esd-label">Date received</span>
+            <input className="esd-input" value={form.received} onChange={(e) => field("received", { received: e.target.value })} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <input className="esd-input" placeholder="Client name" value={form.client} onChange={(e) => field("client", { client: e.target.value })} />
+          <input className="esd-input" placeholder="Guests" value={form.guests} onChange={(e) => field("guests", { guests: e.target.value })} />
+        </div>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <input className="esd-input" placeholder="Venue" value={form.venue} onChange={(e) => field("venue", { venue: e.target.value })} />
+          <input className="esd-input" placeholder="Service (Lunch/Dinner...)" value={form.service} onChange={(e) => field("service", { service: e.target.value })} />
+        </div>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <input className="esd-input" placeholder="Type (Corporate/Wedding...)" value={form.type} onChange={(e) => field("type", { type: e.target.value })} />
+          <input className="esd-input" placeholder="Value ($)" value={form.value} onChange={(e) => field("value", { value: e.target.value })} />
+        </div>
+
+        <p className="text-xs mb-4" style={{ color: "var(--muted)" }}>
+          Phone, email, spend per head, deposits, and the run sheet brief can be added afterwards from the event's own page.
+        </p>
+
+        <button
+          onClick={() => {
+            if (!form.event.trim()) return;
+            onSave({
+              ...form,
+              value: form.value ? Number(String(form.value).replace(/[^0-9.]/g, "")) : null,
+            });
+          }}
+          disabled={!form.event.trim()}
+          className="w-full py-2 rounded-lg text-sm"
+          style={{ background: form.event.trim() ? "var(--brass)" : "var(--panel-light)", color: form.event.trim() ? "var(--ink)" : "var(--muted)" }}
+        >
+          Add event
+        </button>
+      </div>
+    </div>
   );
+}
+
+export default function EventsSalesDashboard() {
+  const [events, setEvents] = useState([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+
+  async function loadEventsRemote() {
+    try {
+      const res = await fetch("/api/events");
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.events || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function saveEventsRemote(rawList) {
+    try {
+      await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events: rawList }),
+      });
+    } catch {
+      // best-effort — UI already updated locally even if persistence fails
+    }
+  }
+
+  function persistEvents(nextHydrated) {
+    setEvents(nextHydrated);
+    saveEventsRemote(nextHydrated.map(dehydrateEvent));
+  }
+
+  useEffect(() => {
+    (async () => {
+      const storedRaw = await loadEventsRemote();
+      if (storedRaw && storedRaw.length) {
+        setEvents(storedRaw.map(hydrateEvent));
+        setEventsLoading(false);
+        return;
+      }
+      // First run — seed from the built-in dataset, then try to migrate any
+      // legacy per-brief edits saved under the old storage key.
+      let seeded = RAW_EVENTS.map((e, i) =>
+        hydrateEvent({
+          uid: `seed-${i}`,
+          date: e.date,
+          received: e.received,
+          event: e.event,
+          client: e.client,
+          guests: e.guests,
+          venue: e.venue,
+          service: e.service,
+          status: e.status,
+          type: e.type,
+          value: e.value,
+          phone: e.phone,
+          email: e.email,
+          spendPerHead: e.spendPerHead,
+          depositSent: e.depositSent,
+          depositPaid: e.depositPaid,
+          sevenrooms: e.sevenrooms,
+          notes: e.notes,
+          brief: e.brief,
+        })
+      );
+      setEvents(seeded);
+      saveEventsRemote(seeded.map(dehydrateEvent));
+      setEventsLoading(false);
+    })();
+  }, []);
 
   const [statusFilter, setStatusFilter] = useState("All");
   const [showLedger, setShowLedger] = useState(false);
   const [search, setSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
-  const [savedBriefs, setSavedBriefs] = useState({});
   const [editingBrief, setEditingBrief] = useState(false);
   const [draftBrief, setDraftBrief] = useState("");
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [draftDetails, setDraftDetails] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showAddEvent, setShowAddEvent] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const stored = await window.storage.get("runsheets", true);
-        if (stored?.value) setSavedBriefs(JSON.parse(stored.value));
-      } catch {
-        // no saved run sheets yet — that's fine
-      }
-    })();
-  }, []);
+  function updateSelectedEvent(patch) {
+    const uid = selectedEvent.uid;
+    const nextList = events.map((ev) => (ev.uid === uid ? { ...ev, ...patch } : ev));
+    persistEvents(nextList);
+    setSelectedEvent((prev) => ({ ...prev, ...patch }));
+  }
 
-  function saveBrief(key, text) {
-    setSavedBriefs((prev) => {
-      const next = { ...prev, [key]: { text, updatedAt: new Date().toISOString() } };
-      window.storage.set("runsheets", JSON.stringify(next), true).catch(() => {});
-      return next;
-    });
+  function saveBrief(text) {
+    updateSelectedEvent({ brief: text, briefUpdatedAt: new Date().toISOString() });
   }
 
   function fmtEditedAt(iso) {
@@ -295,15 +461,24 @@ export default function EventsSalesDashboard() {
       " at " + d.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" });
   }
 
-  function getSavedBrief(key) {
-    const v = savedBriefs[key];
-    if (v === undefined) return undefined;
-    return typeof v === "string" ? { text: v, updatedAt: null } : v;
+  function deleteSelectedEvent() {
+    const uid = selectedEvent.uid;
+    persistEvents(events.filter((ev) => ev.uid !== uid));
+    setSelectedEvent(null);
+    setConfirmDelete(false);
+  }
+
+  function addEvent(rawFields) {
+    const newEvent = hydrateEvent({ uid: makeUid(), ...rawFields });
+    persistEvents([...events, newEvent]);
+    setShowAddEvent(false);
   }
 
   useEffect(() => {
     setEditingBrief(false);
-  }, [selectedEvent]);
+    setEditingDetails(false);
+    setConfirmDelete(false);
+  }, [selectedEvent?.uid]);
   const [uploadError, setUploadError] = useState("");
 
   const filtered = useMemo(() => {
@@ -522,11 +697,21 @@ export default function EventsSalesDashboard() {
   function handleCsvUpload(ev) {
     const file = ev.target.files?.[0];
     if (!file) return;
+    if (
+      events.length &&
+      !window.confirm(
+        `This will replace all ${events.length} current events (including any edits made here) with what's in this CSV. Continue?`
+      )
+    ) {
+      ev.target.value = "";
+      return;
+    }
     setUploadError("");
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        setEvents(parseCsvText(e.target.result));
+        const rows = parseCsvText(e.target.result);
+        persistEvents(rows);
         setShowUpload(false);
       } catch (err) {
         setUploadError("Couldn't read that file. Export a CSV with Date, Event, Client, Guests, Venue, Status, Type, Value columns.");
@@ -590,16 +775,31 @@ export default function EventsSalesDashboard() {
           </h1>
           <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>
             Kiosk · Bistro · Feu · Blind Tiger — {events.length} bookings on the books, as of {fmtDate(TODAY)}
+            {eventsLoading ? " · loading…" : ""}
           </p>
         </div>
-        <button
-          onClick={() => setShowUpload(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm esd-fade"
-          style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.3)", color: "var(--brass-bright)" }}
-        >
-          <Upload size={16} /> Upload updated CSV
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAddEvent(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm esd-fade"
+            style={{ background: "var(--brass)", color: "var(--ink)" }}
+          >
+            <Plus size={16} /> Add event
+          </button>
+          <button
+            onClick={() => setShowUpload(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm esd-fade"
+            style={{ background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.3)", color: "var(--brass-bright)" }}
+          >
+            <Upload size={16} /> Import CSV
+          </button>
+        </div>
       </div>
+
+      {/* Add event modal */}
+      {showAddEvent && (
+        <AddEventModal onClose={() => setShowAddEvent(false)} onSave={addEvent} />
+      )}
 
       {/* Upload modal */}
       {showUpload && (
@@ -637,7 +837,7 @@ export default function EventsSalesDashboard() {
                 const daysOld = Math.round((TODAY - e.receivedObj) / (1000 * 60 * 60 * 24));
                 return (
                   <div
-                    key={e.id}
+                    key={e.uid}
                     className={`py-3 ${i !== staleEnquiriesList.length - 1 ? "esd-divider" : ""}`}
                     onClick={() => {
                       setShowStaleEnquiries(false);
@@ -681,7 +881,7 @@ export default function EventsSalesDashboard() {
             <div className="space-y-0">
               {weekEnquiriesList.map((e, i) => (
                 <div
-                  key={e.id}
+                  key={e.uid}
                   className={`py-3 ${i !== weekEnquiriesList.length - 1 ? "esd-divider" : ""}`}
                   onClick={() => {
                     setShowWeekEnquiries(false);
@@ -715,65 +915,153 @@ export default function EventsSalesDashboard() {
             </button>
 
             <p className="esd-mono text-xs tracking-widest uppercase mb-1" style={{ color: "var(--brass)" }}>Brief &amp; Run Sheet</p>
-            <h3 className="esd-serif text-2xl mb-1" style={{ color: "var(--cream)" }}>{selectedEvent.event}</h3>
-            <div className="flex items-center gap-2 mb-4">
-              <span
-                className="text-xs px-2 py-0.5 rounded-full"
-                style={{ background: `${STATUS_COLORS[selectedEvent.status]}22`, color: STATUS_COLORS[selectedEvent.status] }}
-              >
-                {selectedEvent.status}
-              </span>
-              <span className="text-xs" style={{ color: "var(--muted)" }}>{selectedEvent.type}</span>
+            <div className="flex items-start justify-between gap-3 mb-1">
+              <h3 className="esd-serif text-2xl" style={{ color: "var(--cream)" }}>{selectedEvent.event}</h3>
+              {!editingDetails ? (
+                <button
+                  onClick={() => {
+                    setDraftDetails({
+                      date: selectedEvent.dateRaw, received: selectedEvent.receivedRaw, event: selectedEvent.event,
+                      client: selectedEvent.client, guests: selectedEvent.guestsRaw, venue: selectedEvent.venue,
+                      service: selectedEvent.service, status: selectedEvent.status, type: selectedEvent.type,
+                      value: selectedEvent.value ?? "", phone: selectedEvent.phone, email: selectedEvent.email,
+                      spendPerHead: selectedEvent.spendPerHead, depositSent: selectedEvent.depositSent,
+                      depositPaid: selectedEvent.depositPaid, sevenrooms: selectedEvent.sevenrooms, notes: selectedEvent.notes,
+                    });
+                    setEditingDetails(true);
+                  }}
+                  className="text-xs underline flex-shrink-0 mt-1.5"
+                  style={{ color: "var(--brass-bright)" }}
+                >
+                  Edit details
+                </button>
+              ) : (
+                <div className="flex gap-2 flex-shrink-0 mt-1.5">
+                  <button onClick={() => setEditingDetails(false)} className="text-xs" style={{ color: "var(--muted)" }}>Cancel</button>
+                  <button
+                    onClick={() => {
+                      updateSelectedEvent({
+                        dateRaw: draftDetails.date,
+                        dateObj: parseDate(draftDetails.date),
+                        receivedRaw: draftDetails.received,
+                        receivedObj: draftDetails.received ? parseDate(draftDetails.received) : null,
+                        event: draftDetails.event || "Untitled",
+                        client: draftDetails.client || "—",
+                        guestsRaw: draftDetails.guests,
+                        guestsNum: parseGuests(draftDetails.guests || ""),
+                        venue: draftDetails.venue || "TBC",
+                        service: draftDetails.service,
+                        status: draftDetails.status,
+                        type: draftDetails.type,
+                        value: draftDetails.value === "" ? null : Number(String(draftDetails.value).replace(/[^0-9.]/g, "")),
+                        phone: draftDetails.phone,
+                        email: draftDetails.email,
+                        spendPerHead: draftDetails.spendPerHead,
+                        depositSent: draftDetails.depositSent,
+                        depositPaid: draftDetails.depositPaid,
+                        sevenrooms: draftDetails.sevenrooms,
+                        notes: draftDetails.notes,
+                      });
+                      setEditingDetails(false);
+                    }}
+                    className="text-xs underline"
+                    style={{ color: "var(--brass-bright)" }}
+                  >
+                    Save
+                  </button>
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div>
-                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Date</p>
-                <p className="text-sm" style={{ color: "var(--cream)" }}>{fmtDate(selectedEvent.dateObj)}</p>
+            {!editingDetails ? (
+              <div className="flex items-center gap-2 mb-4">
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full"
+                  style={{ background: `${STATUS_COLORS[selectedEvent.status]}22`, color: STATUS_COLORS[selectedEvent.status] }}
+                >
+                  {selectedEvent.status}
+                </span>
+                <span className="text-xs" style={{ color: "var(--muted)" }}>{selectedEvent.type}</span>
               </div>
-              <div>
-                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Venue</p>
-                <p className="text-sm" style={{ color: "var(--cream)" }}>{selectedEvent.venue}</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                <input className="esd-input" placeholder="Event name" value={draftDetails.event}
+                  onChange={(e) => setDraftDetails((d) => ({ ...d, event: e.target.value }))} />
+                <select className="esd-input" value={draftDetails.status}
+                  onChange={(e) => setDraftDetails((d) => ({ ...d, status: e.target.value }))}>
+                  {["Confirmed", "Completed", "Enquiry", "Cancelled", "Pending", "Unspecified"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
               </div>
-              <div>
-                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Guests</p>
-                <p className="text-sm" style={{ color: "var(--cream)" }}>{selectedEvent.guestsRaw || "—"}</p>
+            )}
+
+            {!editingDetails ? (
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                  <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Date</p>
+                  <p className="text-sm" style={{ color: "var(--cream)" }}>{fmtDate(selectedEvent.dateObj)}</p>
+                </div>
+                <div>
+                  <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Venue</p>
+                  <p className="text-sm" style={{ color: "var(--cream)" }}>{selectedEvent.venue}</p>
+                </div>
+                <div>
+                  <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Guests</p>
+                  <p className="text-sm" style={{ color: "var(--cream)" }}>{selectedEvent.guestsRaw || "—"}</p>
+                </div>
+                <div>
+                  <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Service</p>
+                  <p className="text-sm" style={{ color: "var(--cream)" }}>{selectedEvent.service || "—"}</p>
+                </div>
               </div>
-              <div>
-                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Service</p>
-                <p className="text-sm" style={{ color: "var(--cream)" }}>{selectedEvent.service || "—"}</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                <div>
+                  <span className="esd-label">Date (DD/MM/YYYY)</span>
+                  <input className="esd-input" value={draftDetails.date} onChange={(e) => setDraftDetails((d) => ({ ...d, date: e.target.value }))} />
+                </div>
+                <div>
+                  <span className="esd-label">Date received</span>
+                  <input className="esd-input" value={draftDetails.received} onChange={(e) => setDraftDetails((d) => ({ ...d, received: e.target.value }))} />
+                </div>
+                <div>
+                  <span className="esd-label">Venue</span>
+                  <input className="esd-input" value={draftDetails.venue} onChange={(e) => setDraftDetails((d) => ({ ...d, venue: e.target.value }))} />
+                </div>
+                <div>
+                  <span className="esd-label">Guests</span>
+                  <input className="esd-input" value={draftDetails.guests} onChange={(e) => setDraftDetails((d) => ({ ...d, guests: e.target.value }))} />
+                </div>
+                <div>
+                  <span className="esd-label">Service</span>
+                  <input className="esd-input" value={draftDetails.service} onChange={(e) => setDraftDetails((d) => ({ ...d, service: e.target.value }))} />
+                </div>
+                <div>
+                  <span className="esd-label">Type</span>
+                  <input className="esd-input" value={draftDetails.type} onChange={(e) => setDraftDetails((d) => ({ ...d, type: e.target.value }))} />
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="esd-divider mb-4" />
 
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <p className="esd-mono text-xs uppercase" style={{ color: "var(--brass)" }}>Event Brief &amp; Run Sheet</p>
-                {!editingBrief && (() => {
-                  const savedEntry = getSavedBrief(eventKey(selectedEvent));
-                  const label = savedEntry?.updatedAt
-                    ? `Last edited ${fmtEditedAt(savedEntry.updatedAt)}`
-                    : savedEntry
-                    ? null
-                    : selectedEvent.brief
-                    ? "From sheet, not yet edited here"
-                    : null;
-                  return label ? (
-                    <span
-                      className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                      style={{ color: "#1a1a1a", background: "#efe6d6" }}
-                    >
-                      {label}
-                    </span>
-                  ) : null;
-                })()}
+                {!editingBrief && (selectedEvent.briefUpdatedAt || selectedEvent.brief) && (
+                  <span
+                    className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                    style={{ color: "#1a1a1a", background: "#efe6d6" }}
+                  >
+                    {selectedEvent.briefUpdatedAt ? `Last edited ${fmtEditedAt(selectedEvent.briefUpdatedAt)}` : "From sheet, not yet edited here"}
+                  </span>
+                )}
               </div>
               {!editingBrief ? (
                 <button
                   onClick={() => {
-                    const key = eventKey(selectedEvent);
-                    setDraftBrief(getSavedBrief(key)?.text ?? selectedEvent.brief ?? "");
+                    setDraftBrief(selectedEvent.brief || "");
                     setEditingBrief(true);
                   }}
                   className="text-xs underline"
@@ -783,16 +1071,10 @@ export default function EventsSalesDashboard() {
                 </button>
               ) : (
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => setEditingBrief(false)}
-                    className="text-xs"
-                    style={{ color: "var(--muted)" }}
-                  >
-                    Cancel
-                  </button>
+                  <button onClick={() => setEditingBrief(false)} className="text-xs" style={{ color: "var(--muted)" }}>Cancel</button>
                   <button
                     onClick={() => {
-                      saveBrief(eventKey(selectedEvent), draftBrief);
+                      saveBrief(draftBrief);
                       setEditingBrief(false);
                     }}
                     className="text-xs underline"
@@ -818,76 +1100,121 @@ export default function EventsSalesDashboard() {
                 value={draftBrief}
                 onChange={(e) => setDraftBrief(e.target.value)}
               />
-            ) : (() => {
-              const key = eventKey(selectedEvent);
-              const saved = getSavedBrief(key);
-              const displayedBrief = saved ? saved.text : selectedEvent.brief;
-              return displayedBrief ? (
-                <div
-                  className="text-sm whitespace-pre-wrap mb-4 p-3 rounded-lg"
-                  style={{ color: "var(--cream)", background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.25)", lineHeight: 1.6 }}
-                >
-                  {displayedBrief}
-                </div>
-              ) : (
-                <p className="text-sm mb-4" style={{ color: "var(--muted)", fontStyle: "italic" }}>
-                  No brief on file yet — click Edit to write one, or add it to the "XYZ" column in the sheet and re-upload.
-                </p>
-              );
-            })()}
+            ) : selectedEvent.brief ? (
+              <div
+                className="text-sm whitespace-pre-wrap mb-4 p-3 rounded-lg"
+                style={{ color: "var(--cream)", background: "var(--panel-light)", border: "1px solid rgba(168,135,94,0.25)", lineHeight: 1.6 }}
+              >
+                {selectedEvent.brief}
+              </div>
+            ) : (
+              <p className="text-sm mb-4" style={{ color: "var(--muted)", fontStyle: "italic" }}>
+                No brief on file yet — click Edit to write one.
+              </p>
+            )}
 
             <div className="esd-divider mb-4" />
 
             <p className="esd-mono text-xs uppercase mb-2" style={{ color: "var(--brass)" }}>Client</p>
-            <div className="grid grid-cols-1 gap-1.5 mb-4 text-sm" style={{ color: "var(--cream)" }}>
-              <p className="flex items-center gap-1.5">
-                {selectedEvent.client}
-                {isRepeatClient(selectedEvent) && (
-                  <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: "rgba(168,135,94,0.2)", color: "var(--brass-bright)" }}>
-                    repeat client
-                  </span>
-                )}
-              </p>
-              {selectedEvent.phone && <p style={{ color: "var(--muted)" }}>{selectedEvent.phone}</p>}
-              {selectedEvent.email && <p style={{ color: "var(--muted)" }}>{selectedEvent.email}</p>}
-            </div>
+            {!editingDetails ? (
+              <div className="grid grid-cols-1 gap-1.5 mb-4 text-sm" style={{ color: "var(--cream)" }}>
+                <p className="flex items-center gap-1.5">
+                  {selectedEvent.client}
+                  {isRepeatClient(selectedEvent) && (
+                    <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: "rgba(168,135,94,0.2)", color: "var(--brass-bright)" }}>
+                      repeat client
+                    </span>
+                  )}
+                </p>
+                {selectedEvent.phone && <p style={{ color: "var(--muted)" }}>{selectedEvent.phone}</p>}
+                {selectedEvent.email && <p style={{ color: "var(--muted)" }}>{selectedEvent.email}</p>}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 mb-4">
+                <input className="esd-input" placeholder="Client name" value={draftDetails.client} onChange={(e) => setDraftDetails((d) => ({ ...d, client: e.target.value }))} />
+                <input className="esd-input" placeholder="Phone" value={draftDetails.phone} onChange={(e) => setDraftDetails((d) => ({ ...d, phone: e.target.value }))} />
+                <input className="esd-input" placeholder="Email" value={draftDetails.email} onChange={(e) => setDraftDetails((d) => ({ ...d, email: e.target.value }))} />
+              </div>
+            )}
 
             <div className="esd-divider mb-4" />
 
             <p className="esd-mono text-xs uppercase mb-2" style={{ color: "var(--brass)" }}>Financials</p>
-            <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
-              <div>
-                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Value</p>
-                <p style={{ color: "var(--brass-bright)" }}>{fmtCurrency(selectedEvent.value)}</p>
+            {!editingDetails ? (
+              <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
+                <div>
+                  <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Value</p>
+                  <p style={{ color: "var(--brass-bright)" }}>{fmtCurrency(selectedEvent.value)}</p>
+                </div>
+                <div>
+                  <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Spend per head</p>
+                  <p style={{ color: "var(--cream)" }}>{selectedEvent.spendPerHead || "—"}</p>
+                </div>
+                <div>
+                  <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Deposit sent</p>
+                  <p style={{ color: "var(--cream)" }}>{selectedEvent.depositSent || "—"}</p>
+                </div>
+                <div>
+                  <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Deposit paid</p>
+                  <p style={{ color: "var(--cream)" }}>{selectedEvent.depositPaid || "—"}</p>
+                </div>
               </div>
-              <div>
-                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Spend per head</p>
-                <p style={{ color: "var(--cream)" }}>{selectedEvent.spendPerHead || "—"}</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                <div>
+                  <span className="esd-label">Value ($)</span>
+                  <input className="esd-input" value={draftDetails.value} onChange={(e) => setDraftDetails((d) => ({ ...d, value: e.target.value }))} />
+                </div>
+                <div>
+                  <span className="esd-label">Spend per head</span>
+                  <input className="esd-input" value={draftDetails.spendPerHead} onChange={(e) => setDraftDetails((d) => ({ ...d, spendPerHead: e.target.value }))} />
+                </div>
+                <div>
+                  <span className="esd-label">Deposit sent</span>
+                  <input className="esd-input" value={draftDetails.depositSent} onChange={(e) => setDraftDetails((d) => ({ ...d, depositSent: e.target.value }))} />
+                </div>
+                <div>
+                  <span className="esd-label">Deposit paid</span>
+                  <input className="esd-input" value={draftDetails.depositPaid} onChange={(e) => setDraftDetails((d) => ({ ...d, depositPaid: e.target.value }))} />
+                </div>
               </div>
-              <div>
-                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Deposit sent</p>
-                <p style={{ color: "var(--cream)" }}>{selectedEvent.depositSent || "—"}</p>
-              </div>
-              <div>
-                <p className="esd-label" style={{ fontSize: 10, textTransform: "uppercase", color: "var(--muted)" }}>Deposit paid</p>
-                <p style={{ color: "var(--cream)" }}>{selectedEvent.depositPaid || "—"}</p>
-              </div>
-            </div>
+            )}
 
-            {selectedEvent.sevenrooms && (
+            {(selectedEvent.sevenrooms || editingDetails) && (
               <>
                 <div className="esd-divider mb-4" />
                 <p className="esd-mono text-xs uppercase mb-1" style={{ color: "var(--brass)" }}>Sevenrooms Booking</p>
-                <p className="text-sm mb-4" style={{ color: "var(--cream)" }}>{selectedEvent.sevenrooms}</p>
+                {!editingDetails ? (
+                  <p className="text-sm mb-4" style={{ color: "var(--cream)" }}>{selectedEvent.sevenrooms}</p>
+                ) : (
+                  <input className="esd-input mb-4" value={draftDetails.sevenrooms} onChange={(e) => setDraftDetails((d) => ({ ...d, sevenrooms: e.target.value }))} />
+                )}
               </>
             )}
 
-            {selectedEvent.notes && (
+            {(selectedEvent.notes || editingDetails) && (
               <>
                 <div className="esd-divider mb-4" />
                 <p className="esd-mono text-xs uppercase mb-1" style={{ color: "var(--brass)" }}>Additional Notes</p>
-                <p className="text-sm whitespace-pre-wrap" style={{ color: "var(--cream)" }}>{selectedEvent.notes}</p>
+                {!editingDetails ? (
+                  <p className="text-sm whitespace-pre-wrap" style={{ color: "var(--cream)" }}>{selectedEvent.notes}</p>
+                ) : (
+                  <textarea className="esd-input" rows={2} value={draftDetails.notes} onChange={(e) => setDraftDetails((d) => ({ ...d, notes: e.target.value }))} />
+                )}
               </>
+            )}
+
+            <div className="esd-divider mt-4 mb-3" />
+            {!confirmDelete ? (
+              <button onClick={() => setConfirmDelete(true)} className="text-xs underline" style={{ color: "#8b1e1e" }}>
+                Delete this event
+              </button>
+            ) : (
+              <div className="flex items-center gap-3 text-xs">
+                <span style={{ color: "#8b1e1e" }}>Delete permanently? This can't be undone.</span>
+                <button onClick={deleteSelectedEvent} className="underline font-semibold" style={{ color: "#8b1e1e" }}>Yes, delete</button>
+                <button onClick={() => setConfirmDelete(false)} style={{ color: "var(--muted)" }}>Cancel</button>
+              </div>
             )}
           </div>
         </div>
@@ -1074,7 +1401,7 @@ export default function EventsSalesDashboard() {
           <div className="space-y-0">
             {upcomingList.map((e, i) => (
               <div
-                key={e.id}
+                key={e.uid}
                 className={`flex items-center justify-between py-3 ${i !== upcomingList.length - 1 ? "esd-divider" : ""}`}
                 onClick={() => setSelectedEvent(e)}
                 style={{ cursor: "pointer" }}
@@ -1197,7 +1524,7 @@ export default function EventsSalesDashboard() {
           <div className="space-y-0">
             {selectedDayEvents.map((e, i) => (
               <div
-                key={e.id}
+                key={e.uid}
                 className={`py-2.5 ${i !== selectedDayEvents.length - 1 ? "esd-divider" : ""}`}
                 onClick={() => setSelectedEvent(e)}
                 style={{ cursor: "pointer" }}
@@ -1268,7 +1595,7 @@ export default function EventsSalesDashboard() {
               <tbody>
                 {filtered.map((e) => (
                   <tr
-                    key={e.id}
+                    key={e.uid}
                     className="esd-divider"
                     onClick={() => setSelectedEvent(e)}
                     style={{ cursor: "pointer" }}
