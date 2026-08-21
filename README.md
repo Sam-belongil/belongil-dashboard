@@ -1,49 +1,45 @@
 # The Belongil — Events & Private Dining Dashboard
 
-A standalone version of the events sales dashboard — same design and
-charts as the one in Claude, running as its own website instead of
-inside a chat.
+Same dashboard, running as its own site instead of inside a Claude chat.
 
-Data comes in via CSV upload (File → Download → CSV from your Google
-Sheet, then upload it in the dashboard). No live sync, no API keys —
-just a reliable ~10-second refresh whenever you want current numbers.
+Event data is now genuinely shared and editable — add, edit, or delete
+events directly on the site, and everyone who opens it sees the same
+data. This needs a small database connected to the project (steps below).
+A Google Sheets CSV export can still be used as an optional bulk import.
 
-## Run it locally first (recommended)
+## One-time setup: connect a database
+
+1. Go to your project on vercel.com → **Storage** tab
+2. Under **Marketplace Database Providers**, find **Upstash** (Redis) → **Create**
+3. Choose the free plan, pick a region, click through to connect it to this project
+4. Vercel automatically adds the required environment variables — no manual copying needed
+5. Redeploy the project once (Vercel usually does this automatically after connecting storage; if not, go to Deployments → the latest one → **Redeploy**)
+
+Without this step, the site still loads and looks right, but edits won't
+save anywhere — the "Add event" and "Edit details" buttons will silently
+fail. If that happens, double-check the database is actually connected
+in the Storage tab.
+
+## Run it locally first (optional)
 
 ```bash
 npm install
-npm run dev
+vercel dev
 ```
 
-Open the URL it prints (usually http://localhost:5173). Click
-**"Upload updated CSV"**, choose a CSV exported from your sheet, and
-confirm it loads correctly before deploying.
+Use `vercel dev` rather than `npm run dev` here — the `/api/events`
+endpoint only works through Vercel's own dev server, since it's a
+serverless function, not part of the Vite frontend.
 
-### About the "Enquiries this week" card
+## Deploy to Vercel
 
-This counts enquiries by when they were *received*, not the event
-date. It needs a **Date Received** column in your sheet (any column
-with "received" in the header) — without it, the card shows "—" and
-a reminder in its label.
-
-## Deploy to Vercel (free)
-
-**Option A — no command line, using GitHub:**
-1. Create a new GitHub repo and push this folder to it.
-2. Go to vercel.com, sign in, click **Add New → Project**.
-3. Import that repo. Vercel auto-detects Vite — leave settings as default.
-4. Click **Deploy**. You'll get a live URL in about a minute.
-
-**Option B — command line:**
-```bash
-npm install -g vercel
-vercel
-```
-Follow the prompts (defaults are fine). It deploys and gives you a URL
-immediately.
+Same as before — either import the repo through vercel.com, or run
+`vercel` from this folder. The `api/events.js` file is picked up
+automatically; no extra configuration needed.
 
 ## Updating the dashboard later
 
-If you want to tweak anything (colors, columns, charts), just ask
-Claude to edit `src/App.jsx` and re-deploy — `vercel` (or a new git
-push, if using GitHub) publishes the update.
+Ask Claude to edit `src/App.jsx` (or `api/events.js` for the backend)
+and push the change — if Claude has push access to this repo via a
+GitHub token, it can commit directly; otherwise, paste the updated file
+into GitHub's web editor the same way as before.
